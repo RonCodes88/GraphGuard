@@ -9,6 +9,7 @@ import NetworkActivityTracker from "./NetworkActivityTracker";
 import EnhancedNetworkView from "./EnhancedNetworkView";
 import { networkDataService, NetworkTrafficData, NetworkNode, NetworkEdge } from "@/services/networkDataService";
 import { MAJOR_CITIES, getCitiesByCountry } from "@/data/cities";
+import { getCityThreatLevel, getThreatColor, type ThreatLevel } from "@/data/countryThreats";
 
 interface EarthProps {
   onCountryViewChange?: (isActive: boolean) => void;
@@ -169,37 +170,9 @@ export default function Earth({ onCountryViewChange }: EarthProps) {
         const y = radius * Math.cos(phi);
         const z = radius * Math.sin(phi) * Math.sin(theta);
 
-        // Determine threat level (dummy data - will be replaced with real threat data)
-        // For now: capitals and major cities have higher threat probability
-        const rand = Math.random();
-        let threatLevel: 'critical' | 'medium' | 'safe';
-        let markerColor: number;
-        
-        if (city.isCapital || city.population > 10000000) {
-          // High-value targets: 40% critical, 40% medium, 20% safe
-          if (rand < 0.4) {
-            threatLevel = 'critical';
-            markerColor = 0xff0000; // Red
-          } else if (rand < 0.8) {
-            threatLevel = 'medium';
-            markerColor = 0xffff00; // Yellow
-          } else {
-            threatLevel = 'safe';
-            markerColor = 0x00ff00; // Green
-          }
-        } else {
-          // Regular cities: 20% critical, 30% medium, 50% safe
-          if (rand < 0.2) {
-            threatLevel = 'critical';
-            markerColor = 0xff0000; // Red
-          } else if (rand < 0.5) {
-            threatLevel = 'medium';
-            markerColor = 0xffff00; // Yellow
-          } else {
-            threatLevel = 'safe';
-            markerColor = 0x00ff00; // Green
-          }
-        }
+        // Determine threat level based on country
+        const threatLevel: ThreatLevel = getCityThreatLevel(city.country);
+        const markerColor: number = getThreatColor(threatLevel);
 
         // Create city marker with color-coded threat level
         const markerSize = city.isCapital ? 0.03 : 0.02;
