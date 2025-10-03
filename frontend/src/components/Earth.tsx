@@ -10,14 +10,22 @@ import EnhancedNetworkView from "./EnhancedNetworkView";
 import { networkDataService, NetworkTrafficData, NetworkNode, NetworkEdge } from "@/services/networkDataService";
 import { MAJOR_CITIES, getCitiesByCountry } from "@/data/cities";
 
+interface EarthProps {
+  onCountryViewChange?: (isActive: boolean) => void;
+}
 
-export default function Earth() {
+export default function Earth({ onCountryViewChange }: EarthProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [networkData, setNetworkData] = useState<NetworkTrafficData | null>(null);
   const [networkTrackerPosition, setNetworkTrackerPosition] = useState({ x: 0, y: 0 });
   const [loadingNetworkData, setLoadingNetworkData] = useState(false);
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
   const [hoveredCountry, setHoveredCountry] = useState<string | null>(null);
+
+  // Notify parent when country view changes
+  useEffect(() => {
+    onCountryViewChange?.(selectedCountry !== null);
+  }, [selectedCountry, onCountryViewChange]);
 
 
   // Function to fetch network data for a country with real-time updates
