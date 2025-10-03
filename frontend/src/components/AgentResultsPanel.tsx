@@ -18,6 +18,7 @@ interface AgentResult {
   confidence?: number;
   metadata?: any;
   error?: string;
+  timestamp?: string;
 }
 
 export default function AgentResultsPanel({ 
@@ -37,52 +38,82 @@ export default function AgentResultsPanel({
       return [];
     }
 
+    // Check if we have agent interactions data (new format)
+    if (result.agent_interactions && result.agent_interactions.interactions) {
+      return result.agent_interactions.interactions.map((interaction: any) => ({
+        agent: interaction.agent,
+        status: interaction.status === 'completed' ? 'completed' : 'processing',
+        decision: interaction.action,
+        reasoning: interaction.summary,
+        confidence: interaction.confidence,
+        metadata: interaction.details,
+        timestamp: interaction.timestamp
+      }));
+    }
+
+    // Fallback to old format
     const workflowState = result.result?.workflow_state;
     const metadata = result.result?.metadata || {};
     const completedAgents = workflowState?.completed_agents || [];
 
-    const agents: AgentResult[] = [
-      {
+    // Handle the new structure where each agent has its own decision object
+    const agents: AgentResult[] = [];
+    
+    // Extract each agent's decision if available
+    if (metadata.detector_decision) {
+      agents.push({
         agent: 'Detector',
         status: completedAgents.includes('detector') ? 'completed' : 'processing',
-        decision: metadata.detector_decision,
-        reasoning: metadata.detector_reasoning,
-        confidence: metadata.detector_confidence,
-        metadata: metadata.detector_metadata
-      },
-      {
+        decision: metadata.detector_decision.decision,
+        reasoning: metadata.detector_decision.reasoning,
+        confidence: metadata.detector_decision.confidence,
+        metadata: metadata.detector_decision.metadata
+      });
+    }
+
+    if (metadata.investigator_decision) {
+      agents.push({
         agent: 'Investigator',
         status: completedAgents.includes('investigator') ? 'completed' : 'processing',
-        decision: metadata.investigator_decision,
-        reasoning: metadata.investigator_reasoning,
-        confidence: metadata.investigator_confidence,
-        metadata: metadata.investigator_metadata
-      },
-      {
+        decision: metadata.investigator_decision.decision,
+        reasoning: metadata.investigator_decision.reasoning,
+        confidence: metadata.investigator_decision.confidence,
+        metadata: metadata.investigator_decision.metadata
+      });
+    }
+
+    if (metadata.monitor_decision) {
+      agents.push({
         agent: 'Monitor',
         status: completedAgents.includes('monitor') ? 'completed' : 'processing',
-        decision: metadata.monitor_decision,
-        reasoning: metadata.monitor_reasoning,
-        confidence: metadata.monitor_confidence,
-        metadata: metadata.monitor_metadata
-      },
-      {
+        decision: metadata.monitor_decision.decision,
+        reasoning: metadata.monitor_decision.reasoning,
+        confidence: metadata.monitor_decision.confidence,
+        metadata: metadata.monitor_decision.metadata
+      });
+    }
+
+    if (metadata.judge_decision) {
+      agents.push({
         agent: 'Judge',
         status: completedAgents.includes('judge') ? 'completed' : 'processing',
-        decision: metadata.judge_decision,
-        reasoning: metadata.judge_reasoning,
-        confidence: metadata.judge_confidence,
-        metadata: metadata.judge_metadata
-      },
-      {
+        decision: metadata.judge_decision.decision,
+        reasoning: metadata.judge_decision.reasoning,
+        confidence: metadata.judge_decision.confidence,
+        metadata: metadata.judge_decision.metadata
+      });
+    }
+
+    if (metadata.mitigator_decision) {
+      agents.push({
         agent: 'Mitigator',
         status: completedAgents.includes('mitigator') ? 'completed' : 'processing',
-        decision: metadata.mitigator_decision,
-        reasoning: metadata.mitigator_reasoning,
-        confidence: metadata.mitigator_confidence,
-        metadata: metadata.mitigator_metadata
-      }
-    ];
+        decision: metadata.mitigator_decision.decision,
+        reasoning: metadata.mitigator_decision.reasoning,
+        confidence: metadata.mitigator_decision.confidence,
+        metadata: metadata.mitigator_decision.metadata
+      });
+    }
 
     return agents;
   };
@@ -267,22 +298,40 @@ export default function AgentResultsPanel({
                     {expandedAgent === agent.agent && (
                       <div className="p-3 bg-gray-900/50 border-t border-gray-700">
                         <div className="space-y-3 text-xs">
+                          {agent.timestamp && (
+                            <div className="flex items-center gap-2 text-gray-400">
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              <span>{new Date(agent.timestamp).toLocaleTimeString()}</span>
+                            </div>
+                          )}
+
                           {agent.reasoning && (
                             <div>
-                              <span className="text-gray-500 block mb-1">Analysis:</span>
+                              <span className="text-gray-500 block mb-1">Step-by-Step Analysis:</span>
                               <p className="text-gray-300 leading-relaxed">
                                 {agent.reasoning}
                               </p>
                             </div>
                           )}
                           
-                          {agent.metadata && (
+                          {agent.metadata && Object.keys(agent.metadata).length > 0 && (
                             <div>
-                              <span className="text-gray-500 block mb-1">Technical Details:</span>
+                              <span className="text-gray-500 block mb-1">Key Findings:</span>
                               <div className="bg-gray-800/50 p-2 rounded border border-gray-600">
-                                <pre className="text-gray-300 text-xs overflow-x-auto">
-                                  {JSON.stringify(agent.metadata, null, 2)}
-                                </pre>
+                                {Object.entries(agent.metadata).map(([key, value]) => (
+                                  <div key={key} className="mb-1">
+                                    <span className="text-blue-300 font-medium">
+                                      {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}:
+                                    </span>
+                                    <span className="text-gray-300 ml-2">
+                                      {typeof value === 'boolean' ? (value ? 'Yes' : 'No') :
+                                       typeof value === 'object' ? JSON.stringify(value) :
+                                       value?.toString()}
+                                    </span>
+                                  </div>
+                                ))}
                               </div>
                             </div>
                           )}

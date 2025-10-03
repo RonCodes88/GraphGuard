@@ -16,6 +16,7 @@ import ReactFlow, {
   MarkerType,
 } from "reactflow";
 import "reactflow/dist/style.css";
+import AgentResultsPanel from "./AgentResultsPanel";
 
 interface ReactFlowNetworkViewProps {
   country: string;
@@ -212,6 +213,9 @@ export default function ReactFlowNetworkView({ country, onBack }: ReactFlowNetwo
     totalTraffic: 0,
     threatLevel: "Low",
   });
+  const [isAgentResultsOpen, setIsAgentResultsOpen] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<any>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   // Generate realistic network data with proper topology
   const generateNetworkData = () => {
@@ -319,12 +323,283 @@ export default function ReactFlowNetworkView({ country, onBack }: ReactFlowNetwo
     [setEdges]
   );
 
+  // Mock function to simulate agent analysis
+  const handleAnalyzeWithAgents = async (node: Node) => {
+    setIsAnalyzing(true);
+    
+    // Simulate API call delay
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Mock analysis result based on node status
+    const getMockResult = (nodeStatus: string) => {
+      const baseResult = {
+        success: true,
+        result: {
+          workflow_state: {
+            completed_agents: ["detector", "investigator", "judge", "mitigator"]
+          },
+          metadata: {
+            detector_decision: {
+              decision: "threat_detected",
+              reasoning: "Network traffic patterns analysis completed",
+              confidence: 0.82,
+              metadata: {
+                threats_detected: [],
+                heavy_hitters: [],
+                graph_anomalies: []
+              }
+            },
+            investigator_decision: {
+              decision: "analysis_complete",
+              reasoning: "Deep forensic analysis of node behavior and connections",
+              confidence: 0.89,
+              metadata: {
+                investigations: [],
+                attack_campaigns: [],
+                node_forensics: []
+              }
+            },
+            judge_decision: {
+              decision: "assessment_complete",
+              reasoning: "Risk assessment and decision making completed",
+              confidence: 0.85,
+              metadata: {
+                final_assessment: {},
+                action_recommendations: {},
+                risk_scoring: {}
+              }
+            },
+            mitigator_decision: {
+              decision: "monitoring_active",
+              reasoning: "Ongoing monitoring and threat prevention measures",
+              confidence: 0.91,
+              metadata: {
+                mitigation_actions: [],
+                action_timeline: [],
+                effectiveness_prediction: {}
+              }
+            }
+          }
+        },
+        explanation: "AI agent system has completed comprehensive analysis of the selected network node."
+      };
+
+      switch (nodeStatus) {
+        case "attacked":
+          return {
+            ...baseResult,
+            result: {
+              ...baseResult.result,
+              decision: "high_threat_confirmed",
+              reasoning: "The findings from both the Detector and Investigator indicate a high-confidence threat involving a significant volume of incoming traffic directed at the server node. The traffic patterns suggest a potential DDoS attack, which requires immediate isolation of the affected node to mitigate service disruption.",
+              confidence: 0.9,
+              metadata: {
+                ...baseResult.result.metadata,
+                detector_decision: {
+                  decision: "threat_detected",
+                  reasoning: "Heavy-hitter detection identified abnormally high traffic volume from multiple sources targeting this node. Connection patterns show characteristics consistent with DDoS attack vectors.",
+                  confidence: 0.87,
+                  metadata: {
+                    threats_detected: [
+                      {
+                        threat_id: "ddos_001",
+                        threat_type: "ddos_source",
+                        confidence: 0.87,
+                        severity: "critical",
+                        flagged_entities: {
+                          nodes: [node.id],
+                          ips: ["192.168.1.100", "10.0.0.50"]
+                        },
+                        reasoning: "Multiple sources generating high-volume traffic",
+                        indicators: ["High packet rate", "Multiple source IPs", "Sustained traffic spike"]
+                      }
+                    ],
+                    heavy_hitters: [
+                      {
+                        entity_id: node.id,
+                        entity_type: "target",
+                        traffic_volume: 45000,
+                        connection_count: 127,
+                        anomaly_score: 0.89,
+                        reason: "Traffic volume 300% above baseline"
+                      }
+                    ],
+                    graph_anomalies: [
+                      {
+                        anomaly_type: "traffic_spike",
+                        affected_nodes: [node.id],
+                        description: "Sudden traffic increase with multiple concurrent connections",
+                        severity: "high"
+                      }
+                    ]
+                  }
+                },
+                investigator_decision: {
+                  decision: "coordinated_attack",
+                  reasoning: "Forensic analysis reveals a coordinated multi-vector attack targeting this server. The attack pattern shows characteristics of a distributed denial-of-service (DDoS) campaign with traffic originating from multiple geographic locations.",
+                  confidence: 0.92,
+                  metadata: {
+                    investigations: [
+                      {
+                        investigation_id: "inv_001",
+                        related_threats: ["ddos_001"],
+                        attack_type: "DDoS",
+                        attack_subtype: "Volumetric Flood",
+                        sophistication_level: "medium",
+                        confidence: 0.92,
+                        severity: "critical",
+                        affected_entities: {
+                          nodes: [node.id],
+                          ips: ["192.168.1.100", "10.0.0.50"]
+                        },
+                        attack_timeline: [
+                          {
+                            stage: "execution",
+                            description: "Multiple sources begin flooding target with traffic",
+                            evidence: ["Packet rate spike", "Connection count increase"]
+                          }
+                        ],
+                        technical_details: {
+                          attack_vector: "High-volume traffic from distributed sources",
+                          indicators_of_compromise: ["High packet rate", "Multiple source IPs", "Sustained traffic"],
+                          ttps: ["T1499.002 - Endpoint Denial of Service"]
+                        },
+                        impact_assessment: {
+                          affected_systems: 1,
+                          data_at_risk: "Low",
+                          business_impact: "Service disruption and potential downtime",
+                          estimated_scope: "Localized"
+                        }
+                      }
+                    ]
+                  }
+                },
+                judge_decision: {
+                  decision: "immediate_mitigation_required",
+                  reasoning: "Risk assessment indicates high probability of successful service disruption. The coordinated nature of the attack and the volume of traffic require immediate action to prevent system compromise and maintain service availability.",
+                  confidence: 0.88,
+                  metadata: {
+                    final_assessment: {
+                      threat_level: "CRITICAL",
+                      confidence: 0.88,
+                      requires_immediate_action: true,
+                      automated_response_approved: true,
+                      human_intervention_required: false
+                    },
+                    action_recommendations: {
+                      immediate_actions: ["Block attacking IPs", "Increase monitoring", "Alert security team"],
+                      investigation_actions: ["Trace attack sources", "Analyze attack patterns"],
+                      monitoring_actions: ["Monitor traffic patterns", "Track system performance"]
+                    },
+                    risk_scoring: {
+                      overall_risk_score: 85,
+                      data_exposure_risk: 20,
+                      service_disruption_risk: 95,
+                      reputation_risk: 60
+                    }
+                  }
+                },
+                mitigator_decision: {
+                  decision: "block_and_monitor",
+                  reasoning: "Implementing immediate blocking measures against identified attack sources while maintaining enhanced monitoring to prevent further escalation. Automated response systems have been activated to protect network infrastructure.",
+                  confidence: 0.91,
+                  metadata: {
+                    mitigation_actions: [
+                      {
+                        action_id: "mit_001",
+                        action_type: "block_ip",
+                        target: "192.168.1.100",
+                        severity: "critical",
+                        automated: true,
+                        success_probability: 0.95,
+                        estimated_impact: "Block traffic from identified attack source",
+                        rollback_plan: "Remove IP block if false positive detected"
+                      },
+                      {
+                        action_id: "mit_002",
+                        action_type: "throttle_traffic",
+                        target: node.id,
+                        severity: "high",
+                        automated: true,
+                        success_probability: 0.88,
+                        estimated_impact: "Reduce incoming traffic rate to normal levels",
+                        rollback_plan: "Remove throttling after attack subsides"
+                      }
+                    ],
+                    effectiveness_prediction: {
+                      threat_reduction: 85,
+                      false_positive_risk: 15,
+                      business_impact: "medium",
+                      estimated_resolution_time: "5-10 minutes"
+                    }
+                  }
+                }
+              }
+            },
+            explanation: "The findings from both the Detector and Investigator indicate a high-confidence threat involving a significant volume of incoming traffic directed at the server node 193.239.30.91. The traffic patterns suggest a potential DDoS attack, which requires immediate isolation of the affected node to mitigate service disruption. The Monitor findings did not provide additional data, but the existing evidence is sufficient to warrant immediate action."
+          };
+        case "suspicious":
+          return {
+            ...baseResult,
+            result: {
+              ...baseResult.result,
+              decision: "suspicious_activity_detected",
+              reasoning: "Unusual network patterns detected requiring monitoring",
+              confidence: 0.72,
+              metadata: {
+                ...baseResult.result.metadata,
+                detector_decision: "suspicious_pattern",
+                detector_reasoning: "Unusual traffic patterns detected",
+                investigator_decision: "requires_monitoring",
+                investigator_reasoning: "Node behavior analysis shows suspicious characteristics",
+                judge_decision: "monitor_closely",
+                judge_reasoning: "Enhanced monitoring recommended",
+                mitigator_decision: "monitor_and_alert",
+                mitigator_reasoning: "Setting up enhanced monitoring and alerting"
+              }
+            },
+            explanation: "Suspicious activity detected on this network node. Enhanced monitoring has been activated."
+          };
+        default:
+          return {
+            ...baseResult,
+            result: {
+              ...baseResult.result,
+              decision: "normal_operation",
+              reasoning: "Node operating within normal parameters",
+              confidence: 0.95,
+              metadata: {
+                ...baseResult.result.metadata,
+                detector_decision: "normal_traffic",
+                detector_reasoning: "No suspicious patterns detected",
+                investigator_decision: "normal_operation",
+                investigator_reasoning: "Node behavior analysis shows normal operation",
+                judge_decision: "no_action_required",
+                judge_reasoning: "Node is operating normally",
+                mitigator_decision: "standard_monitoring",
+                mitigator_reasoning: "Standard monitoring protocols active"
+              }
+            },
+            explanation: "Network node analysis complete. Node is operating within normal parameters."
+          };
+      }
+    };
+
+    const mockResult = getMockResult(node.data?.status || "normal");
+    setAnalysisResult(mockResult);
+    setIsAnalyzing(false);
+    setIsAgentResultsOpen(true);
+  };
+
   const onNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     setSelectedNode(node);
+    // Automatically trigger agent analysis when a node is clicked
+    handleAnalyzeWithAgents(node);
   }, []);
 
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
+    setIsAgentResultsOpen(false);
   }, []);
 
   return (
@@ -407,6 +682,19 @@ export default function ReactFlowNetworkView({ country, onBack }: ReactFlowNetwo
         </div>
       </div>
 
+      {/* Loading Indicator */}
+      {isAnalyzing && (
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 bg-white border border-gray-200 rounded-lg p-6 shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="animate-spin w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+            <div>
+              <p className="text-sm font-medium text-gray-900">Analyzing with AI Agents...</p>
+              <p className="text-xs text-gray-500">Processing network node data</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Node Details Panel */}
       {selectedNode && (
         <div className="absolute bottom-8 left-8 right-8 z-50 bg-white border border-gray-200 rounded-lg p-6 shadow-sm max-w-md">
@@ -461,6 +749,15 @@ export default function ReactFlowNetworkView({ country, onBack }: ReactFlowNetwo
           </div>
         </div>
       </div>
+
+      {/* Agent Results Panel */}
+      <AgentResultsPanel
+        isOpen={isAgentResultsOpen}
+        onClose={() => setIsAgentResultsOpen(false)}
+        analysisResult={analysisResult}
+        selectedNode={selectedNode}
+        isLoading={isAnalyzing}
+      />
     </div>
   );
 }

@@ -32,10 +32,21 @@ export default function MonitoringPanel() {
   const [selectedSeverity, setSelectedSeverity] = useState<string>("all");
   const [timeWindow, setTimeWindow] = useState<string>("15m");
   const [isMounted, setIsMounted] = useState(false);
+  const [isMonitoringAgentActive, setIsMonitoringAgentActive] = useState(false);
+  const [monitoringAgentSummary, setMonitoringAgentSummary] = useState<any>(null);
 
   // Prevent hydration errors by only rendering time-dependent content on client
   useEffect(() => {
     setIsMounted(true);
+  }, []);
+
+  // Simulate monitoring agent activity
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setIsMonitoringAgentActive(prev => !prev);
+    }, 3000); // Toggle every 3 seconds
+
+    return () => clearInterval(interval);
   }, []);
 
   // Dummy active incidents
@@ -191,6 +202,25 @@ export default function MonitoringPanel() {
     return () => clearInterval(interval);
   }, []);
 
+  // Simulate monitoring agent analysis
+  const analyzeWithMonitoringAgent = async () => {
+    try {
+      // Simulate AI monitoring agent analysis
+      const mockSummary = {
+        network_status: Math.random() > 0.7 ? "critical" : Math.random() > 0.5 ? "at_risk" : "healthy",
+        health_score: Math.floor(Math.random() * 40) + 60, // 60-100
+        summary: "Network traffic analysis complete. Monitoring for anomalies and threats in real-time.",
+        dashboard: {
+          threat_level: Math.random() > 0.8 ? "HIGH" : Math.random() > 0.6 ? "MEDIUM" : "LOW"
+        }
+      };
+      
+      setMonitoringAgentSummary(mockSummary);
+    } catch (error) {
+      console.error("Monitoring agent analysis failed:", error);
+    }
+  };
+
   // Trigger monitoring agent analysis periodically
   useEffect(() => {
     // Initial analysis
@@ -283,7 +313,7 @@ export default function MonitoringPanel() {
           <div className="mt-3 p-3 bg-gray-900/50 rounded border border-gray-700">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-blue-400">🤖 AI Monitor</span>
+                <span className="text-xs text-blue-400">Monitor Agent</span>
                 <span className={`text-xs px-2 py-0.5 rounded ${
                   monitoringAgentSummary.network_status === "healthy" ? "bg-green-600 text-white" :
                   monitoringAgentSummary.network_status === "degraded" ? "bg-yellow-600 text-black" :
