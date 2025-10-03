@@ -184,3 +184,4 @@ async def get_agent_capabilities():
             "capabilities": ["automated_response", "escalation", "remediation"]
         }
     }
+    

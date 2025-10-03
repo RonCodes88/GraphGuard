@@ -195,4 +195,3 @@ class NetworkTrafficStreamer:
 
 # Global streamer instance
 network_streamer = NetworkTrafficStreamer()
-

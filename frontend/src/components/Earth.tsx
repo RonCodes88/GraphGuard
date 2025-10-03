@@ -13,9 +13,12 @@ import { getCityThreatLevel, getThreatColor, type ThreatLevel } from "@/data/cou
 
 interface EarthProps {
   onCountryViewChange?: (isActive: boolean) => void;
+  onNodeSelect?: (node: any) => void;
+  onAnalyzeWithAgents?: (node: any) => void;
+  isAnalyzing?: boolean;
 }
 
-export default function Earth({ onCountryViewChange }: EarthProps) {
+export default function Earth({ onCountryViewChange, onNodeSelect, onAnalyzeWithAgents, isAnalyzing }: EarthProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [networkData, setNetworkData] = useState<NetworkTrafficData | null>(null);
   const [networkTrackerPosition, setNetworkTrackerPosition] = useState({ x: 0, y: 0 });
@@ -69,7 +72,7 @@ export default function Earth({ onCountryViewChange }: EarthProps) {
   // Function to handle node clicks in network visualization
   const handleNodeClick = (node: NetworkNode) => {
     console.log("Node clicked:", node);
-    // You can add more detailed node information display here
+    onNodeSelect?.(node);
   };
 
   // Function to handle edge clicks in network visualization
@@ -380,13 +383,15 @@ export default function Earth({ onCountryViewChange }: EarthProps) {
 
   return (
     <>
-      {/* Show country detail view if a country is selected */}
-      {selectedCountry && (
-        <EnhancedNetworkView 
-          country={selectedCountry} 
-          onBack={() => setSelectedCountry(null)} 
-        />
-      )}
+              {/* Show country detail view if a country is selected */}
+              {selectedCountry && (
+                <EnhancedNetworkView 
+                  country={selectedCountry} 
+                  onBack={() => setSelectedCountry(null)}
+                  onAnalyzeWithAgents={onAnalyzeWithAgents}
+                  isAnalyzing={isAnalyzing}
+                />
+              )}
       
       {/* Show Earth globe when no country is selected */}
       {!selectedCountry && (

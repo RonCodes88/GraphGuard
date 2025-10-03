@@ -261,7 +261,7 @@ export default function MonitoringPanel() {
 
 
   return (
-    <div className="fixed right-0 top-0 h-screen w-[480px] bg-black/95 backdrop-blur-md border-l border-gray-800 text-white overflow-hidden flex flex-col font-mono">
+    <div className="fixed right-0 top-0 h-screen w-[480px] bg-black/95 backdrop-blur-md border-l border-gray-800 text-white overflow-hidden flex flex-col font-mono z-30">
       {/* Header */}
       <div className="p-4 border-b border-gray-800 bg-gradient-to-b from-gray-950/50 to-transparent">
         <div className="flex items-center gap-2">
@@ -523,6 +523,7 @@ export default function MonitoringPanel() {
           </div>
         </div>
       </div>
+
     </div>
   );
 }
