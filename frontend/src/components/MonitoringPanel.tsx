@@ -25,34 +25,17 @@ interface Incident {
   affectedNodes: string[];
 }
 
-interface KPIData {
-  latencyP95: number[];
-  errorRate: number[];
-  suspiciousEdges: number[];
-  authFailures: number[];
-  threshold: number;
-}
-
 export default function MonitoringPanel() {
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
-  const [selectedSeverity, setSelectedSeverity] = useState<string>("all");
-  const [timeWindow, setTimeWindow] = useState<string>("15m"); // time window
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedSeverity, setSelectedSeverity] = useState<string>("all");
+  const [timeWindow, setTimeWindow] = useState<string>("15m");
   const [isMounted, setIsMounted] = useState(false);
 
   // Prevent hydration errors by only rendering time-dependent content on client
   useEffect(() => {
     setIsMounted(true);
   }, []);
-
-  // Dummy KPI data with sparklines that update continuously
-  const [kpiData, setKpiData] = useState<KPIData>({
-    latencyP95: [120, 135, 142, 158, 165, 172, 180, 195, 210, 225, 240, 255, 270, 285, 298],
-    errorRate: [0.5, 0.6, 0.8, 1.2, 1.5, 2.1, 2.8, 3.5, 4.2, 4.8, 5.5, 6.2, 7.1, 8.5, 9.2],
-    suspiciousEdges: [2, 3, 4, 3, 5, 7, 9, 12, 15, 18, 22, 25, 28, 32, 35],
-    authFailures: [0, 0, 1, 1, 2, 3, 5, 8, 12, 15, 18, 22, 25, 28, 30],
-    threshold: 20,
-  });
 
   // Dummy active incidents
   const [incidents] = useState<Incident[]>([
@@ -163,44 +146,6 @@ export default function MonitoringPanel() {
     return () => clearInterval(interval);
   }, []);
 
-  // Continuously update KPI data and sparklines
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setKpiData(prev => {
-        // Calculate new values based on recent activity
-        const recentAlerts = logs.filter(log => log.severity === "ALERT").length;
-        const recentWarnings = logs.filter(log => log.severity === "WARN").length;
-        
-        // Generate new data points with some volatility
-        const newLatency = Math.max(100, Math.min(400, 
-          prev.latencyP95[prev.latencyP95.length - 1] + (Math.random() * 30 - 15) + (recentAlerts * 10)
-        ));
-        
-        const newErrorRate = Math.max(0, Math.min(15, 
-          prev.errorRate[prev.errorRate.length - 1] + (Math.random() * 2 - 1) + (recentAlerts * 0.5)
-        ));
-        
-        const newSuspiciousEdges = Math.max(0, Math.min(50, 
-          prev.suspiciousEdges[prev.suspiciousEdges.length - 1] + Math.floor(Math.random() * 8 - 4) + recentWarnings
-        ));
-        
-        const newAuthFailures = Math.max(0, Math.min(50, 
-          prev.authFailures[prev.authFailures.length - 1] + Math.floor(Math.random() * 6 - 3) + Math.floor(recentAlerts * 1.5)
-        ));
-
-        return {
-          latencyP95: [...prev.latencyP95.slice(1), Math.round(newLatency)],
-          errorRate: [...prev.errorRate.slice(1), Number(newErrorRate.toFixed(1))],
-          suspiciousEdges: [...prev.suspiciousEdges.slice(1), newSuspiciousEdges],
-          authFailures: [...prev.authFailures.slice(1), newAuthFailures],
-          threshold: 20,
-        };
-      });
-    }, 4000); // Update every 4 seconds
-
-    return () => clearInterval(interval);
-  }, [logs]); // Depend on logs to react to alert changes
-
   // Simulate real-time worldwide log updates
   useEffect(() => {
     const interval = setInterval(() => {
@@ -281,13 +226,15 @@ export default function MonitoringPanel() {
     }
   };
 
+  // Filter logs by severity, country search, and time window
   const filteredLogs = logs.filter(log => {
     // Filter by severity
     if (selectedSeverity !== "all" && log.severity !== selectedSeverity) return false;
     
-    // Filter by search query
-    if (searchQuery && !log.country.toLowerCase().includes(searchQuery.toLowerCase()) && 
-        !log.issue.toLowerCase().includes(searchQuery)) return false;
+    // Filter by country search
+    if (searchQuery && !log.country.toLowerCase().includes(searchQuery.toLowerCase())) {
+      return false;
+    }
     
     // Filter by time window
     const logTime = new Date(log.timestamp).getTime();
@@ -298,33 +245,6 @@ export default function MonitoringPanel() {
     return true;
   });
 
-  // Calculate overall threat level based on recent logs and incidents
-  const getOverallThreatLevel = (): "critical" | "medium" | "safe" => {
-    const recentLogs = logs.slice(0, 10); // Last 10 logs
-    const alertCount = recentLogs.filter(log => log.severity === "ALERT").length;
-    const warnCount = recentLogs.filter(log => log.severity === "WARN").length;
-    const activeCriticalIncidents = incidents.filter(i => i.status === "mitigating").length;
-
-    if (alertCount >= 3 || activeCriticalIncidents > 0 || kpiData.errorRate[14] > 7) {
-      return "critical";
-    } else if (alertCount > 0 || warnCount >= 3 || kpiData.errorRate[14] > 3) {
-      return "medium";
-    }
-    return "safe";
-  };
-
-  const threatLevel = getOverallThreatLevel();
-  
-  const getThreatLevelDotColor = () => {
-    switch (threatLevel) {
-      case "critical":
-        return "bg-red-500";
-      case "medium":
-        return "bg-yellow-500";
-      case "safe":
-        return "bg-green-500";
-    }
-  };
 
   return (
     <div className="fixed right-0 top-0 h-screen w-[480px] bg-black/95 backdrop-blur-md border-l border-gray-800 text-white overflow-hidden flex flex-col font-mono">
@@ -340,196 +260,32 @@ export default function MonitoringPanel() {
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-track-gray-900 scrollbar-thumb-gray-700 hover:scrollbar-thumb-gray-600">
         
-        {/* Filters & Time Window */}
+        {/* Country Search Bar */}
         <div className="p-3 border-b border-gray-800 bg-gray-950/30">
-          <h2 className="text-xs font-semibold text-white mb-2 tracking-wider">FILTERS & TIME WINDOW</h2>
-          <div className="space-y-2">
-            <div className="flex gap-2">
-              <button
-                onClick={() => setSelectedSeverity("all")}
-                className={`px-2 py-1 text-xs rounded transition-colors ${
-                  selectedSeverity === "all" ? "bg-white text-black" : "bg-gray-800 text-gray-400 hover:bg-gray-700"
-                }`}
+          <h2 className="text-xs font-semibold text-white mb-2 tracking-wider">SEARCH COUNTRY</h2>
+          <input
+            type="text"
+            placeholder="Type country name to view history..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-black/50 border border-gray-700 rounded px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-white focus:bg-black/70 transition-all"
+          />
+          {searchQuery && (
+            <div className="mt-2 text-xs text-gray-500">
+              Showing history for: <span className="text-white font-semibold">{searchQuery}</span>
+              <button 
+                onClick={() => setSearchQuery("")}
+                className="ml-2 text-gray-400 hover:text-white"
               >
-                ALL
-              </button>
-              <button
-                onClick={() => setSelectedSeverity("OK")}
-                className={`px-2 py-1 text-xs rounded transition-colors ${
-                  selectedSeverity === "OK" ? "bg-gray-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"
-                }`}
-              >
-                OK
-              </button>
-              <button
-                onClick={() => setSelectedSeverity("WARN")}
-                className={`px-2 py-1 text-xs rounded transition-colors ${
-                  selectedSeverity === "WARN" ? "bg-yellow-500 text-black" : "bg-gray-800 text-gray-400 hover:bg-gray-700"
-                }`}
-              >
-                WARN
-              </button>
-              <button
-                onClick={() => setSelectedSeverity("ALERT")}
-                className={`px-2 py-1 text-xs rounded transition-colors ${
-                  selectedSeverity === "ALERT" ? "bg-red-500 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"
-                }`}
-              >
-                ALERT
+                ✕ Clear
               </button>
             </div>
-            <input
-              type="text"
-              placeholder="Search country/issue..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-black/50 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 placeholder-gray-600 focus:outline-none focus:border-gray-500"
-            />
-            <div className="space-y-1">
-              <div className="flex gap-1 text-xs flex-wrap">
-                <span className="text-gray-500 w-full mb-0.5">Minutes:</span>
-                {['5m', '15m', '30m', '60m'].map(window => (
-                  <button
-                    key={window}
-                    onClick={() => setTimeWindow(window)}
-                    className={`px-2 py-0.5 rounded ${
-                      timeWindow === window ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"
-                    }`}
-                  >
-                    {window}
-                  </button>
-                ))}
-              </div>
-              <div className="flex gap-1 text-xs flex-wrap">
-                <span className="text-gray-500 w-full mb-0.5">Extended:</span>
-                {['6h', '12h', '1d', '7d', '30d', '1y'].map(window => (
-                  <button
-                    key={window}
-                    onClick={() => setTimeWindow(window)}
-                    className={`px-2 py-0.5 rounded ${
-                      timeWindow === window ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"
-                    }`}
-                  >
-                    {window}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Active Incidents */}
-        <div className="p-3 border-b border-gray-800">
-          <h2 className="text-xs font-semibold text-white mb-2 tracking-wider">ACTIVE INCIDENTS ({incidents.length})</h2>
-          <div className="space-y-2">
-            {incidents.map((incident) => (
-              <div key={incident.id} className="bg-black/50 border border-gray-800 rounded p-2">
-                <div className="flex items-start justify-between mb-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-white">{incident.id}</span>
-                    <span className={`text-xs px-1.5 py-0.5 rounded ${
-                      incident.status === "mitigating" ? "bg-red-500 text-white" : "bg-yellow-500 text-black"
-                    }`}>
-                      {incident.status.toUpperCase()}
-                    </span>
-                  </div>
-                  <span className="text-xs text-gray-500">{incident.firstSeen}</span>
-                </div>
-                <div className="text-xs text-gray-300 mb-1">{incident.topSignal}</div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500">{incident.eventCount} events</span>
-                  <span className="text-gray-500">{incident.affectedNodes.length} nodes</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Key KPIs */}
-        <div className="p-3 border-b border-gray-800">
-          <h2 className="text-xs font-semibold text-white mb-2 tracking-wider">
-            KEY KPIS <span className="text-gray-600">({timeWindow})</span>
-          </h2>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="bg-black/50 border border-gray-800 rounded p-2">
-              <div className="text-xs text-gray-500 mb-1">p95 Latency</div>
-              <div className="flex items-end justify-between">
-                <span className={`text-sm font-bold ${kpiData.latencyP95[14] > 250 ? "text-red-500" : "text-white"}`}>
-                  {kpiData.latencyP95[14]}ms
-                </span>
-                <div className="flex items-end gap-px h-6">
-                  {kpiData.latencyP95.map((val, i) => (
-                    <div
-                      key={i}
-                      className="w-1 bg-red-500/50"
-                      style={{ height: `${(val / 300) * 100}%` }}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="bg-black/50 border border-gray-800 rounded p-2">
-              <div className="text-xs text-gray-500 mb-1">Error Rate</div>
-              <div className="flex items-end justify-between">
-                <span className={`text-sm font-bold ${kpiData.errorRate[14] > 5 ? "text-red-500" : "text-white"}`}>
-                  {kpiData.errorRate[14].toFixed(1)}%
-                </span>
-                <div className="flex items-end gap-px h-6">
-                  {kpiData.errorRate.map((val, i) => (
-                    <div
-                      key={i}
-                      className="w-1 bg-yellow-500/50"
-                      style={{ height: `${(val / 10) * 100}%` }}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="bg-black/50 border border-gray-800 rounded p-2">
-              <div className="text-xs text-gray-500 mb-1">Suspicious Edges</div>
-              <div className="flex items-end justify-between">
-                <span className={`text-sm font-bold ${kpiData.suspiciousEdges[14] > 20 ? "text-yellow-500" : "text-white"}`}>
-                  {kpiData.suspiciousEdges[14]}
-                </span>
-                <div className="flex items-end gap-px h-6">
-                  {kpiData.suspiciousEdges.map((val, i) => (
-                    <div
-                      key={i}
-                      className="w-1 bg-yellow-500/50"
-                      style={{ height: `${(val / 40) * 100}%` }}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="bg-black/50 border border-gray-800 rounded p-2">
-              <div className="text-xs text-gray-500 mb-1">Auth Failures</div>
-              <div className="flex items-end justify-between">
-                <span className={`text-sm font-bold ${kpiData.authFailures[14] > 15 ? "text-red-500" : "text-white"}`}>
-                  {kpiData.authFailures[14]}
-                </span>
-                <div className="flex items-end gap-px h-6">
-                  {kpiData.authFailures.map((val, i) => (
-                    <div
-                      key={i}
-                      className="w-1 bg-red-500/50"
-                      style={{ height: `${(val / 35) * 100}%` }}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="text-xs text-gray-600 mt-2">
-            Threshold: {kpiData.threshold} — showing last {timeWindow} • {filteredLogs.length} events in window
-          </div>
+          )}
         </div>
 
         {/* Global Statistics */}
         <div className="p-3 border-b border-gray-800 bg-gray-950/30">
-          <h2 className="text-xs font-semibold text-white mb-2 tracking-wider">
-            GLOBAL STATISTICS <span className="text-gray-600">(Real-time)</span>
-          </h2>
+          <h2 className="text-xs font-semibold text-white mb-2 tracking-wider">GLOBAL STATISTICS</h2>
           <div className="grid grid-cols-3 gap-2 text-xs">
             <div className="bg-black/50 p-2 rounded border border-gray-800">
               <div className="text-gray-600">Monitored</div>
@@ -544,7 +300,7 @@ export default function MonitoringPanel() {
               <div className="text-red-500 font-bold">{globalStats.criticalAlerts}</div>
             </div>
             <div className="bg-black/50 p-2 rounded border border-gray-800">
-              <div className="text-gray-600">Blocked</div>
+              <div className="text-gray-600">Mitigated</div>
               <div className="text-yellow-500 font-bold">{globalStats.blocked.toLocaleString()}</div>
             </div>
             <div className="bg-black/50 p-2 rounded border border-gray-800">
@@ -558,15 +314,81 @@ export default function MonitoringPanel() {
           </div>
         </div>
 
-        {/* Live Log Stream */}
+        {/* Active Incidents */}
+        <div className="p-3 border-b border-gray-800">
+          <h2 className="text-xs font-semibold text-white mb-2 tracking-wider">ACTIVE INCIDENTS ({incidents.length})</h2>
+          <div className="space-y-2">
+            {incidents.map((incident) => (
+              <div key={incident.id} className="bg-black/50 border border-gray-800 rounded p-2.5 hover:bg-black/70 transition-colors">
+                <div className="flex items-start justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-white">{incident.id}</span>
+                    <span className={`text-xs px-1.5 py-0.5 rounded font-bold ${
+                      incident.status === "mitigating" ? "bg-red-500 text-white" : "bg-yellow-500 text-black"
+                    }`}>
+                      {incident.status.toUpperCase()}
+                    </span>
+                  </div>
+                  <span className="text-xs text-gray-600">{incident.firstSeen}</span>
+                </div>
+                <div className="text-xs text-gray-300 mb-1.5">{incident.topSignal}</div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-500">{incident.eventCount} events</span>
+                  <span className="text-gray-500">{incident.affectedNodes.length} nodes affected</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Worldwide Events */}
         <div className="p-3">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-xs font-semibold text-white tracking-wider">
-              WORLDWIDE EVENTS
+              WORLDWIDE EVENTS {searchQuery && `— ${filteredLogs.length} in ${searchQuery}`}
             </h2>
-            <div className="text-xs text-gray-500">
-              {filteredLogs.length} in last {timeWindow}
-            </div>
+            {!searchQuery && (
+              <div className="text-xs text-gray-600">
+                {filteredLogs.length} in last {timeWindow}
+              </div>
+            )}
+          </div>
+          
+          {/* Severity Filter Chips */}
+          <div className="flex gap-1 mb-2">
+            {['all', 'OK', 'WARN', 'ALERT'].map(severity => (
+              <button
+                key={severity}
+                onClick={() => setSelectedSeverity(severity)}
+                className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                  selectedSeverity === severity 
+                    ? severity === 'all' ? 'bg-white text-black' :
+                      severity === 'OK' ? 'bg-gray-600 text-white' :
+                      severity === 'WARN' ? 'bg-yellow-500 text-black' :
+                      'bg-red-500 text-white'
+                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                }`}
+              >
+                {severity}
+              </button>
+            ))}
+          </div>
+          
+          {/* Time Window Chips */}
+          <div className="flex gap-1 mb-3 flex-wrap">
+            {['5m', '15m', '30m', '1h', '6h', '12h', '1d', '7d', '30d', '1y'].map(window => (
+              <button
+                key={window}
+                onClick={() => setTimeWindow(window)}
+                className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                  timeWindow === window 
+                    ? 'bg-gray-700 text-white' 
+                    : 'bg-gray-800 text-gray-500 hover:bg-gray-700 hover:text-gray-300'
+                }`}
+              >
+                {window}
+              </button>
+            ))}
           </div>
           <div className="space-y-1">
             {filteredLogs.map((log) => (

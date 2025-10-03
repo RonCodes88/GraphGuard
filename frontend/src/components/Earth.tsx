@@ -101,15 +101,26 @@ export default function Earth({ onCountryViewChange }: EarthProps) {
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
 
-    const geometry = new THREE.SphereGeometry(2);
-    const lineMat = new THREE.LineBasicMaterial({
-      color: 0x666666,
-      transparent: true,
-      opacity: 0.3,
-    });
-    const edges = new THREE.EdgesGeometry(geometry, 1);
-    const line = new THREE.LineSegments(edges, lineMat);
-    scene.add(line);
+            // Create sphere outline with more visible wireframe
+            const geometry = new THREE.SphereGeometry(2, 32, 32);
+            const lineMat = new THREE.LineBasicMaterial({
+              color: 0x888888,
+              transparent: true,
+              opacity: 0.6,
+            });
+            const edges = new THREE.EdgesGeometry(geometry, 1);
+            const line = new THREE.LineSegments(edges, lineMat);
+            scene.add(line);
+
+            // Add a subtle sphere surface to make countries appear connected
+            const sphereMaterial = new THREE.MeshBasicMaterial({
+              color: 0x111111,
+              transparent: true,
+              opacity: 0.1,
+              side: THREE.DoubleSide,
+            });
+            const sphereMesh = new THREE.Mesh(geometry, sphereMaterial);
+            scene.add(sphereMesh);
 
     const stars = getStarfield({ numStars: 1000 });
     scene.add(stars);
