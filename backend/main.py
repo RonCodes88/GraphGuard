@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from agents.api import router as agents_router
+from agents.network_api import router as network_router
 
 app = FastAPI(
     title="A10Hacks AI Agent System",
@@ -19,6 +20,7 @@ app.add_middleware(
 
 # Include agent API routes
 app.include_router(agents_router)
+app.include_router(network_router)
 
 @app.get("/")
 async def root():
