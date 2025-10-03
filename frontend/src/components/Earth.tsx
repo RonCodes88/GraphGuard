@@ -72,13 +72,20 @@ export default function Earth() {
   useEffect(() => {
     if (!containerRef.current || selectedCountry) return;
 
-    const w = window.innerWidth;
+    // Adjust for monitoring panel width (384px = w-96)
+    const panelWidth = 384;
+    const w = window.innerWidth - panelWidth;
     const h = window.innerHeight;
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x000000, 0.3);
+    scene.fog = new THREE.FogExp2(0x000000, 0.15);
     const camera = new THREE.PerspectiveCamera(75, w / h, 1, 100);
     camera.position.z = 5;
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ 
+      antialias: true,
+      alpha: true,
+      powerPreference: "high-performance",
+    });
+    renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(w, h);
     containerRef.current.appendChild(renderer.domElement);
 
@@ -87,9 +94,9 @@ export default function Earth() {
 
     const geometry = new THREE.SphereGeometry(2);
     const lineMat = new THREE.LineBasicMaterial({
-      color: 0xffffff,
+      color: 0x666666,
       transparent: true,
-      opacity: 0.4,
+      opacity: 0.3,
     });
     const edges = new THREE.EdgesGeometry(geometry, 1);
     const line = new THREE.LineSegments(edges, lineMat);
@@ -116,7 +123,7 @@ export default function Earth() {
           json: data,
           radius: 2,
           materialOptions: {
-            color: 0x80ff80,
+            color: 0xffffff,
           },
         });
         scene.add(countries);
@@ -134,7 +141,7 @@ export default function Earth() {
               json: data,
               radius: 2,
               materialOptions: {
-                color: 0x80ff80,
+                color: 0xffffff,
               },
             });
             scene.add(countries);
@@ -154,24 +161,57 @@ export default function Earth() {
         const y = radius * Math.cos(phi);
         const z = radius * Math.sin(phi) * Math.sin(theta);
 
-        // Create city marker
+        // Determine threat level (dummy data - will be replaced with real threat data)
+        // For now: capitals and major cities have higher threat probability
+        const rand = Math.random();
+        let threatLevel: 'critical' | 'medium' | 'safe';
+        let markerColor: number;
+        
+        if (city.isCapital || city.population > 10000000) {
+          // High-value targets: 40% critical, 40% medium, 20% safe
+          if (rand < 0.4) {
+            threatLevel = 'critical';
+            markerColor = 0xff0000; // Red
+          } else if (rand < 0.8) {
+            threatLevel = 'medium';
+            markerColor = 0xffff00; // Yellow
+          } else {
+            threatLevel = 'safe';
+            markerColor = 0x00ff00; // Green
+          }
+        } else {
+          // Regular cities: 20% critical, 30% medium, 50% safe
+          if (rand < 0.2) {
+            threatLevel = 'critical';
+            markerColor = 0xff0000; // Red
+          } else if (rand < 0.5) {
+            threatLevel = 'medium';
+            markerColor = 0xffff00; // Yellow
+          } else {
+            threatLevel = 'safe';
+            markerColor = 0x00ff00; // Green
+          }
+        }
+
+        // Create city marker with color-coded threat level
         const markerSize = city.isCapital ? 0.03 : 0.02;
         const markerGeometry = new THREE.SphereGeometry(markerSize, 8, 8);
         const markerMaterial = new THREE.MeshBasicMaterial({
-          color: city.isCapital ? 0xffff00 : 0xff6600,
+          color: markerColor,
           transparent: true,
-          opacity: 0.8,
+          opacity: 0.85,
         });
 
         const marker = new THREE.Mesh(markerGeometry, markerMaterial);
         marker.position.set(x, y, z);
         marker.userData.cityData = city;
         marker.userData.isCityMarker = true;
+        marker.userData.threatLevel = threatLevel;
 
-        // Add pulsing animation for capital cities
-        if (city.isCapital) {
+        // Add pulsing animation for critical threats
+        if (threatLevel === 'critical') {
           marker.userData.update = (t: number) => {
-            const scale = 1 + Math.sin(t * 0.003) * 0.3;
+            const scale = 1 + Math.sin(t * 0.004) * 0.4;
             marker.scale.setScalar(scale);
           };
         }
@@ -179,19 +219,19 @@ export default function Earth() {
         scene.add(marker);
         cityMarkers.push(marker);
 
-        // Add glow effect for major cities
-        if (city.population > 5000000) {
+        // Add glow effect for critical and medium threats
+        if (threatLevel === 'critical' || (threatLevel === 'medium' && city.population > 5000000)) {
           const glowGeometry = new THREE.SphereGeometry(markerSize * 2, 8, 8);
           const glowMaterial = new THREE.MeshBasicMaterial({
-            color: 0xffaa00,
+            color: markerColor,
             transparent: true,
-            opacity: 0.3,
+            opacity: 0.4,
           });
           const glow = new THREE.Mesh(glowGeometry, glowMaterial);
           glow.position.set(x, y, z);
           glow.userData.update = (t: number) => {
-            glow.scale.setScalar(1 + Math.sin(t * 0.002) * 0.5);
-            glowMaterial.opacity = 0.2 + Math.sin(t * 0.002) * 0.1;
+            glow.scale.setScalar(1 + Math.sin(t * 0.003) * 0.5);
+            glowMaterial.opacity = 0.25 + Math.sin(t * 0.003) * 0.15;
           };
           scene.add(glow);
           cityMarkers.push(glow);
@@ -220,15 +260,20 @@ export default function Earth() {
     animate();
 
     function handleWindowResize() {
-      camera.aspect = window.innerWidth / window.innerHeight;
+      const panelWidth = 384;
+      const newWidth = window.innerWidth - panelWidth;
+      camera.aspect = newWidth / window.innerHeight;
       camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setSize(newWidth, window.innerHeight);
     }
     window.addEventListener("resize", handleWindowResize, false);
 
     // Mouse move handler for hover detection
     function handleMouseMove(event: MouseEvent) {
-      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      const panelWidth = 384;
+      const viewportWidth = window.innerWidth - panelWidth;
+      mouse.x = (event.clientX / viewportWidth) * 2 - 1;
       mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
       raycaster.setFromCamera(mouse, camera);
@@ -272,7 +317,7 @@ export default function Earth() {
             hoveredObject = object;
             const material = (object as any).material;
             if (material) {
-              material.color.setHex(0xffff00); // Yellow highlight
+              material.color.setHex(0xffffff); // White highlight
               material.linewidth = 0.004; // Thicker line
               material.needsUpdate = true;
             }
@@ -301,7 +346,9 @@ export default function Earth() {
 
     // Click handler for country selection
     function handleClick(event: MouseEvent) {
-      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      const panelWidth = 384;
+      const viewportWidth = window.innerWidth - panelWidth;
+      mouse.x = (event.clientX / viewportWidth) * 2 - 1;
       mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
       raycaster.setFromCamera(mouse, camera);

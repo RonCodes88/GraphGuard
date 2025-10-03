@@ -514,7 +514,7 @@ export default function EnhancedNetworkView({ country, onBack }: EnhancedNetwork
           <div className="flex items-center gap-4">
             <button
               onClick={onBack}
-              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-white font-medium transition-colors flex items-center gap-2"
+              className="px-4 py-2 bg-white hover:bg-gray-200 rounded-lg text-black font-medium transition-colors flex items-center gap-2"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -523,10 +523,10 @@ export default function EnhancedNetworkView({ country, onBack }: EnhancedNetwork
             </button>
             <div>
               <h1 className="text-3xl font-bold text-white">{country}</h1>
-              <p className="text-purple-400 flex items-center gap-2">
+              <p className="text-gray-400 flex items-center gap-2">
                 Network Security Dashboard
                 {loading && (
-                  <span className="inline-block w-3 h-3 border-2 border-purple-400 border-t-transparent rounded-full animate-spin"></span>
+                  <span className="inline-block w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></span>
                 )}
               </p>
             </div>
@@ -536,8 +536,8 @@ export default function EnhancedNetworkView({ country, onBack }: EnhancedNetwork
               onClick={() => setUseStaticLayout(!useStaticLayout)}
               className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
                 useStaticLayout
-                  ? 'bg-green-600 hover:bg-green-700 text-white'
-                  : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+                  ? 'bg-white hover:bg-gray-200 text-black'
+                  : 'bg-gray-800 hover:bg-gray-700 text-gray-400'
               }`}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -561,31 +561,31 @@ export default function EnhancedNetworkView({ country, onBack }: EnhancedNetwork
 
       {/* Real-time stats panel */}
       <div className="absolute top-24 left-6 z-50 space-y-4">
-        <div className="bg-slate-900/95 backdrop-blur-md rounded-xl p-6 border border-purple-500/30 min-w-[300px]">
-          <h2 className="text-xl font-bold text-purple-300 mb-4">Real-Time Statistics</h2>
+        <div className="bg-black/95 backdrop-blur-md rounded-xl p-6 border border-gray-700 min-w-[300px]">
+          <h2 className="text-xl font-bold text-white mb-4">Real-Time Statistics</h2>
           <div className="space-y-3">
             <div className="flex justify-between items-center">
-              <span className="text-slate-400">Total Packets:</span>
-              <span className="text-green-300 font-mono text-lg">{stats.totalPackets.toLocaleString()}</span>
+              <span className="text-gray-500">Total Packets:</span>
+              <span className="text-white font-mono text-lg">{stats.totalPackets.toLocaleString()}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-slate-400">Packets/sec:</span>
-              <span className="text-purple-300 font-mono text-lg">{stats.packetsPerSecond.toLocaleString()}</span>
+              <span className="text-gray-500">Packets/sec:</span>
+              <span className="text-white font-mono text-lg">{stats.packetsPerSecond.toLocaleString()}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-slate-400">Active Attacks:</span>
-              <span className="text-red-300 font-mono text-lg">{stats.activeAttacks}</span>
+              <span className="text-gray-500">Active Attacks:</span>
+              <span className={`font-mono text-lg ${stats.activeAttacks > 0 ? 'text-red-500' : 'text-gray-400'}`}>{stats.activeAttacks}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-slate-400">Blocked Threats:</span>
-              <span className="text-yellow-300 font-mono text-lg">{stats.blockedThreats}</span>
+              <span className="text-gray-500">Blocked Threats:</span>
+              <span className="text-white font-mono text-lg">{stats.blockedThreats}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-slate-400">Threat Level:</span>
+              <span className="text-gray-500">Threat Level:</span>
               <span className={`font-mono text-lg ${
-                stats.threatLevel === "High" ? "text-red-300" :
-                stats.threatLevel === "Medium" ? "text-yellow-300" :
-                "text-green-300"
+                stats.threatLevel === "High" ? "text-red-500" :
+                stats.threatLevel === "Medium" ? "text-yellow-500" :
+                "text-gray-400"
               }`}>
                 {stats.threatLevel}
               </span>
@@ -594,28 +594,28 @@ export default function EnhancedNetworkView({ country, onBack }: EnhancedNetwork
         </div>
 
         {networkData && (
-          <div className="bg-slate-900/95 backdrop-blur-md rounded-xl p-6 border border-purple-500/30">
-            <h3 className="text-lg font-bold text-purple-300 mb-3">Network Overview</h3>
+          <div className="bg-black/95 backdrop-blur-md rounded-xl p-6 border border-gray-700">
+            <h3 className="text-lg font-bold text-white mb-3">Network Overview</h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-slate-400">Nodes:</span>
+                <span className="text-gray-500">Nodes:</span>
                 <span className="text-white">{networkData.nodes.length}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Connections:</span>
+                <span className="text-gray-500">Connections:</span>
                 <span className="text-white">{networkData.edges.length}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Normal:</span>
-                <span className="text-green-300">{networkData.normal_count}</span>
+                <span className="text-gray-500">Normal:</span>
+                <span className="text-gray-400">{networkData.normal_count}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Suspicious:</span>
-                <span className="text-yellow-300">{networkData.suspicious_count}</span>
+                <span className="text-gray-500">Suspicious:</span>
+                <span className={networkData.suspicious_count > 0 ? "text-yellow-500" : "text-gray-400"}>{networkData.suspicious_count}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Under Attack:</span>
-                <span className="text-red-300">{networkData.attack_count}</span>
+                <span className="text-gray-500">Under Attack:</span>
+                <span className={networkData.attack_count > 0 ? "text-red-500" : "text-gray-400"}>{networkData.attack_count}</span>
               </div>
             </div>
           </div>
@@ -624,31 +624,31 @@ export default function EnhancedNetworkView({ country, onBack }: EnhancedNetwork
 
       {/* Hover tooltip */}
       {hoveredNode && (
-        <div className="absolute z-50 pointer-events-none bg-slate-900/95 backdrop-blur-md rounded-lg p-4 border border-purple-500/30 min-w-[250px]">
-          <div className="text-purple-300 font-bold text-lg mb-2">{hoveredNode.ip}</div>
+        <div className="absolute z-50 pointer-events-none bg-black/95 backdrop-blur-md rounded-lg p-4 border border-gray-700 min-w-[250px]">
+          <div className="text-white font-bold text-lg mb-2">{hoveredNode.ip}</div>
           <div className="space-y-1 text-sm">
             <div className="flex justify-between">
-              <span className="text-slate-400">Type:</span>
+              <span className="text-gray-500">Type:</span>
               <span className="text-white">{hoveredNode.node_type}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-400">Status:</span>
+              <span className="text-gray-500">Status:</span>
               <span className={`font-medium ${
-                hoveredNode.status === "normal" ? "text-green-300" :
-                hoveredNode.status === "suspicious" ? "text-yellow-300" :
-                hoveredNode.status === "attacked" ? "text-red-300" :
+                hoveredNode.status === "normal" ? "text-gray-400" :
+                hoveredNode.status === "suspicious" ? "text-yellow-500" :
+                hoveredNode.status === "attacked" ? "text-red-500" :
                 "text-gray-300"
               }`}>
                 {hoveredNode.status.toUpperCase()}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-400">Traffic:</span>
+              <span className="text-gray-500">Traffic:</span>
               <span className="text-white">{hoveredNode.traffic_volume.toLocaleString()} pkts</span>
             </div>
             {hoveredNode.city && (
               <div className="flex justify-between">
-                <span className="text-slate-400">Location:</span>
+                <span className="text-gray-500">Location:</span>
                 <span className="text-white">{hoveredNode.city}</span>
               </div>
             )}
@@ -658,15 +658,15 @@ export default function EnhancedNetworkView({ country, onBack }: EnhancedNetwork
 
       {/* Selected node details */}
       {selectedNode && (
-        <div className="absolute bottom-6 left-6 right-6 z-50 bg-slate-900/95 backdrop-blur-md rounded-xl p-6 border border-purple-500/30 max-w-2xl">
+        <div className="absolute bottom-6 left-6 right-6 z-50 bg-black/95 backdrop-blur-md rounded-xl p-6 border border-gray-700 max-w-2xl">
           <div className="flex justify-between items-start mb-4">
             <div>
-              <h3 className="text-2xl font-bold text-purple-300">{selectedNode.ip}</h3>
-              <p className="text-slate-400">{selectedNode.city}, {selectedNode.country}</p>
+              <h3 className="text-2xl font-bold text-white">{selectedNode.ip}</h3>
+              <p className="text-gray-500">{selectedNode.city}, {selectedNode.country}</p>
             </div>
             <button
               onClick={() => setSelectedNode(null)}
-              className="text-slate-400 hover:text-white transition-colors"
+              className="text-gray-500 hover:text-white transition-colors"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -675,28 +675,28 @@ export default function EnhancedNetworkView({ country, onBack }: EnhancedNetwork
           </div>
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <div className="text-slate-400 text-sm">Node Type</div>
+              <div className="text-gray-500 text-sm">Node Type</div>
               <div className="text-white font-medium mt-1">{selectedNode.node_type}</div>
             </div>
             <div>
-              <div className="text-slate-400 text-sm">Status</div>
+              <div className="text-gray-500 text-sm">Status</div>
               <div className={`font-medium mt-1 ${
-                selectedNode.status === "normal" ? "text-green-300" :
-                selectedNode.status === "suspicious" ? "text-yellow-300" :
-                selectedNode.status === "attacked" ? "text-red-300" :
+                selectedNode.status === "normal" ? "text-gray-400" :
+                selectedNode.status === "suspicious" ? "text-yellow-500" :
+                selectedNode.status === "attacked" ? "text-red-500" :
                 "text-gray-300"
               }`}>
                 {selectedNode.status.toUpperCase()}
               </div>
             </div>
             <div>
-              <div className="text-slate-400 text-sm">Traffic Volume</div>
+              <div className="text-gray-500 text-sm">Traffic Volume</div>
               <div className="text-white font-medium mt-1">{selectedNode.traffic_volume.toLocaleString()} packets</div>
             </div>
           </div>
           {networkData && (
             <div className="mt-4 pt-4 border-t border-slate-700">
-              <div className="text-sm text-slate-400">
+              <div className="text-sm text-gray-500">
                 Connected to {networkData.edges.filter(e => e && e.source_id === selectedNode.id || e.target_id === selectedNode.id).length} other nodes
               </div>
             </div>
@@ -705,44 +705,44 @@ export default function EnhancedNetworkView({ country, onBack }: EnhancedNetwork
       )}
 
       {/* Legend */}
-      <div className="absolute bottom-6 right-6 z-50 bg-slate-900/95 backdrop-blur-md rounded-xl p-4 border border-purple-500/30">
+      <div className="absolute bottom-6 right-6 z-50 bg-black/95 backdrop-blur-md rounded-xl p-4 border border-gray-700">
         <h4 className="text-white font-bold mb-3">Legend</h4>
         <div className="space-y-2 text-sm">
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-green-500 rounded"></div>
-            <span className="text-slate-300">Normal</span>
+            <div className="w-3 h-3 bg-gray-400 rounded"></div>
+            <span className="text-gray-400">Normal</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 bg-yellow-500 rounded"></div>
-            <span className="text-slate-300">Suspicious</span>
+            <span className="text-gray-400">Suspicious</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 bg-red-500 rounded"></div>
-            <span className="text-slate-300">Under Attack</span>
+            <span className="text-gray-400">Under Attack</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 bg-gray-500 rounded"></div>
-            <span className="text-slate-300">Blocked</span>
+            <span className="text-gray-400">Blocked</span>
           </div>
         </div>
         <div className="mt-4 pt-3 border-t border-slate-700">
-          <h5 className="text-purple-300 font-medium mb-2">Node Types</h5>
+          <h5 className="text-white font-medium mb-2">Node Types</h5>
           <div className="space-y-1 text-xs">
             <div className="flex items-center gap-2">
               <span>🖥️</span>
-              <span className="text-slate-300">Server</span>
+              <span className="text-gray-400">Server</span>
             </div>
             <div className="flex items-center gap-2">
               <span>🛡️</span>
-              <span className="text-slate-300">Firewall</span>
+              <span className="text-gray-400">Firewall</span>
             </div>
             <div className="flex items-center gap-2">
               <span>🔀</span>
-              <span className="text-slate-300">Router</span>
+              <span className="text-gray-400">Router</span>
             </div>
             <div className="flex items-center gap-2">
               <span>🗄️</span>
-              <span className="text-slate-300">Database</span>
+              <span className="text-gray-400">Database</span>
             </div>
           </div>
         </div>

@@ -211,15 +211,16 @@ export function drawThreeGeo({ json, radius, materialOptions }: DrawThreeGeoOpti
       verts.push(x_values[i], y_values[i], z_values[i]);
     }
     lineGeo.setPositions(verts);
-    let hue = 0.3 + Math.random() * 0.2;
-    if (Math.random() > 0.5) {
-      hue -= 0.3;
-    }
-    const color = new THREE.Color().setHSL(hue, 1.0, 0.5);
+    
+    // Use the color from options if provided, otherwise use white
+    const color = options?.color !== undefined ? options.color : 0xffffff;
+    
     const lineMaterial = new LineMaterial({
-      color: color.getHex(),
-      linewidth: 0.002,
+      color: color,
+      linewidth: 0.004,
       worldUnits: true,
+      transparent: false,
+      opacity: 1.0,
     });
     lineMaterial.resolution.set(window.innerWidth, window.innerHeight);
 
@@ -229,7 +230,7 @@ export function drawThreeGeo({ json, radius, materialOptions }: DrawThreeGeoOpti
     
     // Store feature data and original color for hover effects
     line.userData.featureData = featureData;
-    line.userData.originalColor = color.getHex();
+    line.userData.originalColor = color;
     line.userData.isHoverable = true;
     
     line.userData.update = (t: number) => {
