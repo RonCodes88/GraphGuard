@@ -292,15 +292,201 @@ class AgentWorkflow:
         return state
     
     async def _detector_node(self, state: AgentState) -> AgentState:
-        """Detector agent node - placeholder for now"""
-        # TODO: Implement detector logic
+        """
+        Detector agent node - LLM-powered threat detection using GPT-4o-mini
+        
+        Responsibilities:
+        1. Identify suspicious network activity in real-time
+        2. Analyze network traffic using heavy-hitter detection and graph anomaly algorithms
+        3. Flag abnormal IPs, ports, or traffic clusters
+        4. Generate confidence scores for potential attacks
+        """
+        input_data = state["input_data"]
+        context = state.get("context", {})
+        orchestrator_analysis = context.get("orchestrator_analysis", {})
+        
+        # Initialize GPT-4o-mini
+        llm = ChatOpenAI(
+            model="gpt-4o-mini",
+            temperature=0.2,  # Low temperature for analytical tasks
+            api_key=config.openai_api_key
+        )
+        
+        # Create detection prompt
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", """You are an AI-powered network threat detector specialized in identifying suspicious activity and anomalies in network traffic.
+
+Your role:
+- Analyze network traffic patterns to identify threats
+- Apply heavy-hitter detection (identify nodes/edges with abnormally high traffic)
+- Detect graph anomalies (unusual connection patterns, clustering, isolated nodes)
+- Flag abnormal IPs, ports, and traffic volumes
+- Generate confidence scores for each detected threat
+
+You will receive:
+1. Orchestrator analysis (initial threat assessment)
+2. Network nodes (IPs with statuses and traffic volumes)
+3. Network edges (connections between nodes with types and attack classifications)
+
+You must generate a JSON response with:
+{{
+  "threats_detected": [
+    {{
+      "threat_id": "unique_id",
+      "threat_type": "heavy_hitter" | "graph_anomaly" | "suspicious_pattern" | "port_scan" | "ddos_source" | "botnet_node",
+      "confidence": 0.0-1.0,
+      "severity": "low" | "medium" | "high" | "critical",
+      "flagged_entities": {{
+        "nodes": ["node_id1", "node_id2"],
+        "edges": ["edge_id1"],
+        "ips": ["ip1", "ip2"],
+        "ports": [80, 443]
+      }},
+      "reasoning": "Detailed explanation",
+      "indicators": ["indicator1", "indicator2"]
+    }}
+  ],
+  "heavy_hitters": [
+    {{
+      "entity_id": "node_id or ip",
+      "entity_type": "source" | "target",
+      "traffic_volume": int,
+      "connection_count": int,
+      "anomaly_score": 0.0-1.0,
+      "reason": "explanation"
+    }}
+  ],
+  "graph_anomalies": [
+    {{
+      "anomaly_type": "isolated_cluster" | "star_topology" | "unusual_connectivity" | "traffic_spike",
+      "affected_nodes": ["node1", "node2"],
+      "description": "explanation",
+      "severity": "low" | "medium" | "high"
+    }}
+  ],
+  "flagged_ips": [
+    {{
+      "ip": "x.x.x.x",
+      "reason": "explanation",
+      "confidence": 0.0-1.0,
+      "suggested_action": "monitor" | "investigate" | "block"
+    }}
+  ],
+  "overall_assessment": {{
+    "total_threats": int,
+    "critical_threats": int,
+    "high_confidence_threats": int,
+    "recommended_action": "none" | "monitor" | "investigate" | "immediate_response"
+  }},
+  "summary": "Plain-English summary of findings"
+}}
+
+Analysis guidelines:
+- Consider traffic volume relative to network average
+- Identify nodes with disproportionately high in/out connections
+- Detect clustering patterns indicative of botnets
+- Flag IPs marked as "attacked" or "suspicious" in input
+- Look for port scanning patterns (many connections from one source to different targets)
+- Calculate confidence based on evidence strength
+- Provide actionable reasoning for security teams"""),
+            ("human", """Analyze this network traffic and detect threats:
+
+ORCHESTRATOR ANALYSIS:
+{orchestrator_analysis}
+
+NETWORK NODES:
+{nodes}
+
+NETWORK EDGES:
+{edges}
+
+Perform threat detection analysis and return a comprehensive JSON report.""")
+        ])
+        
+        # Invoke LLM
+        try:
+            chain = prompt | llm
+            response = await chain.ainvoke({
+                "orchestrator_analysis": json.dumps(orchestrator_analysis, indent=2),
+                "nodes": json.dumps(input_data.get("nodes", []), indent=2),
+                "edges": json.dumps(input_data.get("edges", []), indent=2)
+            })
+            
+            # Parse LLM response
+            llm_output = response.content
+            
+            # Extract JSON from response (handle markdown code blocks)
+            if "```json" in llm_output:
+                llm_output = llm_output.split("```json")[1].split("```")[0].strip()
+            elif "```" in llm_output:
+                llm_output = llm_output.split("```")[1].split("```")[0].strip()
+            
+            detector_data = json.loads(llm_output)
+            
+            # Extract key fields
+            threats_detected = detector_data.get("threats_detected", [])
+            heavy_hitters = detector_data.get("heavy_hitters", [])
+            graph_anomalies = detector_data.get("graph_anomalies", [])
+            flagged_ips = detector_data.get("flagged_ips", [])
+            overall_assessment = detector_data.get("overall_assessment", {})
+            summary = detector_data.get("summary", "Threat detection analysis complete")
+            
+            # Determine decision based on threats
+            total_threats = overall_assessment.get("total_threats", 0)
+            if total_threats == 0:
+                decision = "no_threats_detected"
+            elif overall_assessment.get("recommended_action") == "immediate_response":
+                decision = "critical_threats_detected"
+            elif overall_assessment.get("recommended_action") == "investigate":
+                decision = "threats_require_investigation"
+            else:
+                decision = "threats_detected_monitoring"
+            
+            # Calculate overall confidence
+            if threats_detected:
+                avg_confidence = sum(t.get("confidence", 0) for t in threats_detected) / len(threats_detected)
+                confidence = round(avg_confidence, 2)
+            else:
+                confidence = 0.95  # High confidence when no threats detected
+            
+        except Exception as e:
+            # Fallback to basic detection if LLM fails
+            print(f"LLM detection failed: {e}. Using fallback.")
+            threats_detected = []
+            heavy_hitters = []
+            graph_anomalies = []
+            flagged_ips = []
+            overall_assessment = {
+                "total_threats": 0,
+                "critical_threats": 0,
+                "high_confidence_threats": 0,
+                "recommended_action": "none"
+            }
+            summary = f"Detector agent encountered an error: {str(e)}"
+            decision = "detection_error"
+            confidence = 0.3
+        
+        # Create detector decision
         state["detector_decision"] = AgentDecision(
             agent_id="detector",
-            decision="no_threat_detected",
-            confidence=0.8,
-            reasoning="No suspicious patterns detected"
+            decision=decision,
+            confidence=confidence,
+            reasoning=summary,
+            metadata={
+                "threats_detected": threats_detected,
+                "heavy_hitters": heavy_hitters,
+                "graph_anomalies": graph_anomalies,
+                "flagged_ips": flagged_ips,
+                "overall_assessment": overall_assessment,
+                "llm_model": "gpt-4o-mini",
+                "llm_powered": True
+            }
         )
+        
+        # Update state
         state["current_step"] = "detector"
+        state["completed_agents"] = state.get("completed_agents", []) + ["detector"]
+        
         return state
     
     async def _investigator_node(self, state: AgentState) -> AgentState:
