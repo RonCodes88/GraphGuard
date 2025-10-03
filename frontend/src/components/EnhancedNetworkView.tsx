@@ -7,6 +7,8 @@ import { networkDataService, NetworkTrafficData, NetworkNode, NetworkEdge } from
 interface EnhancedNetworkViewProps {
   country: string;
   onBack: () => void;
+  onAnalyzeWithAgents?: (node: NetworkNode) => void;
+  isAnalyzing?: boolean;
 }
 
 interface NetworkStats {
@@ -31,7 +33,7 @@ interface D3Edge extends NetworkEdge {
   target: D3Node | string;
 }
 
-export default function EnhancedNetworkView({ country, onBack }: EnhancedNetworkViewProps) {
+export default function EnhancedNetworkView({ country, onBack, onAnalyzeWithAgents, isAnalyzing = false }: EnhancedNetworkViewProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [networkData, setNetworkData] = useState<NetworkTrafficData | null>(null);
@@ -696,8 +698,26 @@ export default function EnhancedNetworkView({ country, onBack }: EnhancedNetwork
           </div>
           {networkData && (
             <div className="mt-4 pt-4 border-t border-slate-700">
-              <div className="text-sm text-gray-500">
+              <div className="text-sm text-gray-500 mb-4">
                 Connected to {networkData.edges.filter(e => e && e.source_id === selectedNode.id || e.target_id === selectedNode.id).length} other nodes
+              </div>
+              
+              {/* AI Agent Analysis Button */}
+              <div className="mt-4">
+                <button 
+                  onClick={() => onAnalyzeWithAgents?.(selectedNode)}
+                  disabled={isAnalyzing}
+                  className={`w-full px-4 py-3 rounded-lg font-medium transition-all ${
+                    isAnalyzing
+                      ? "bg-gray-700 text-gray-400 cursor-not-allowed"
+                      : "bg-blue-600 hover:bg-blue-700 text-white"
+                  }`}
+                >
+                  {isAnalyzing ? "🤖 Analyzing..." : "🤖 Analyze with AI Agents"}
+                </button>
+                <div className="text-xs text-gray-500 mt-2 text-center">
+                  {isAnalyzing ? "Processing with AI agents..." : "Click to run multi-agent analysis on this node"}
+                </div>
               </div>
             </div>
           )}
