@@ -152,7 +152,7 @@ def generate_realistic_attack_patterns(nodes: List[NetworkNode], country_name: s
         ddos_target.status = "attacked"
         
         # Create multiple attack vectors for DDoS
-        num_attackers = random.randint(10, 30)
+        num_attackers = random.randint(5, 15)
         for _ in range(num_attackers):
             attacker = random.choice(nodes)
             if attacker.id != ddos_target.id:
@@ -170,7 +170,7 @@ def generate_realistic_attack_patterns(nodes: List[NetworkNode], country_name: s
                 edges.append(edge)
     
     # Regular network connections with random attacks
-    edge_count = random.randint(50, 100)
+    edge_count = random.randint(20, 50)
     
     for i in range(edge_count):
         source = random.choice(nodes)
@@ -260,8 +260,8 @@ async def get_country_network_data(country_name: str, time_range: str = "1h"):
     
     nodes = []
     
-    # Generate 40-80 nodes for realistic network
-    node_count = random.randint(40, 80)
+    # Generate 20-40 nodes for better performance
+    node_count = random.randint(20, 40)
     
     for i in range(node_count):
         # Weighted random selection for node type
@@ -326,4 +326,92 @@ async def get_global_network_stats():
         active_attacks=random.randint(10, 50),
         suspicious_activity=random.randint(50, 200),
         last_updated=datetime.now().isoformat()
+    )
+
+
+@router.get("/global")
+async def get_global_network_data():
+    """
+    Get global network data for monitoring agent analysis
+    Returns aggregated data from multiple countries with attack patterns
+    """
+    
+    # Generate global network data with multiple countries
+    countries = ["United States", "China", "Germany", "United Kingdom", "Japan", "Russia", "Brazil", "India"]
+    
+    all_nodes = []
+    all_edges = []
+    total_attack_count = 0
+    total_suspicious_count = 0
+    total_normal_count = 0
+    total_traffic = 0
+    
+    # Generate data for each country (smaller sample for performance)
+    for country in countries[:4]:  # Limit to 4 countries for performance
+        # Get country data
+        country_data = await get_country_network_data(country, "1h")
+        
+        # Add country prefix to IDs to avoid conflicts
+        for node in country_data.nodes:
+            node.id = f"global_{node.id}"
+            all_nodes.append(node)
+            total_traffic += node.traffic_volume
+        
+        for edge in country_data.edges:
+            edge.id = f"global_{edge.id}"
+            edge.source_id = f"global_{edge.source_id}"
+            edge.target_id = f"global_{edge.target_id}"
+            all_edges.append(edge)
+            
+            if edge.connection_type == "attack":
+                total_attack_count += 1
+            elif edge.connection_type == "suspicious":
+                total_suspicious_count += 1
+            else:
+                total_normal_count += 1
+    
+    # Add some cross-country connections
+    cross_country_edges = []
+    if len(all_nodes) > 10:
+        for _ in range(min(20, len(all_nodes) // 2)):  # Limit cross-country edges
+            source = random.choice(all_nodes)
+            target = random.choice(all_nodes)
+            
+            if source.id != target.id and source.country != target.country:
+                # Cross-country connections are often suspicious
+                connection_type = random.choices(
+                    ["normal", "suspicious", "attack"],
+                    weights=[0.6, 0.3, 0.1]
+                )[0]
+                
+                edge = NetworkEdge(
+                    id=f"cross_country_{len(cross_country_edges)}",
+                    source_id=source.id,
+                    target_id=target.id,
+                    connection_type=connection_type,
+                    bandwidth=random.randint(100, 2000),
+                    latency=random.uniform(50, 200),
+                    packet_count=random.randint(1000, 10000),
+                    attack_type="Cross-border APT" if connection_type == "attack" else None
+                )
+                cross_country_edges.append(edge)
+                
+                if connection_type == "attack":
+                    total_attack_count += 1
+                elif connection_type == "suspicious":
+                    total_suspicious_count += 1
+                else:
+                    total_normal_count += 1
+    
+    all_edges.extend(cross_country_edges)
+    
+    return NetworkTrafficData(
+        country="Global",
+        timestamp=datetime.now().isoformat(),
+        nodes=all_nodes,
+        edges=all_edges,
+        total_traffic=total_traffic,
+        attack_count=total_attack_count,
+        suspicious_count=total_suspicious_count,
+        normal_count=total_normal_count
     )

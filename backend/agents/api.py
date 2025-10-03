@@ -79,6 +79,65 @@ async def process_with_agents(request: AgentRequest):
         )
 
 
+@router.post("/process-with-interactions")
+async def process_with_interactions(request: AgentRequest):
+    """
+    Process data through the AI agent system and return detailed agent interactions
+    
+    This endpoint provides full visibility into each agent's actions and decisions
+    for display in the UI side panel
+    """
+    try:
+        # Run the agent workflow
+        result: AgentState = await workflow.run(
+            input_data=request.data,
+            context=request.context
+        )
+        
+        # Generate agent interactions summary
+        interactions_summary = workflow.get_agent_interactions_summary(result)
+        
+        # Extract final results
+        final_decision = result.get("final_decision")
+        
+        return {
+            "success": True,
+            "result": {
+                "final_decision": final_decision.decision if final_decision else "pending",
+                "reasoning": final_decision.reasoning if final_decision else "No final decision yet",
+                "confidence": final_decision.confidence if final_decision else 0.0,
+                "metadata": final_decision.metadata if final_decision else {}
+            },
+            "agent_interactions": interactions_summary,
+            "workflow_state": {
+                "current_step": result.get("current_step"),
+                "completed_agents": result.get("completed_agents", [])
+            }
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "result": {},
+            "agent_interactions": {
+                "total_interactions": 0,
+                "workflow_status": "error",
+                "completed_agents": [],
+                "interactions": [],
+                "final_decision": {
+                    "decision": "error",
+                    "confidence": 0,
+                    "reasoning": f"Agent system encountered an error: {str(e)}"
+                }
+            },
+            "workflow_state": {
+                "current_step": "error",
+                "completed_agents": []
+            },
+            "error": str(e)
+        }
+
+
 @router.get("/status")
 async def get_agent_status():
     """Get the status of the agent system"""

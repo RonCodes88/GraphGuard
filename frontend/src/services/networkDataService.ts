@@ -116,6 +116,27 @@ class NetworkDataService {
   }
 
   /**
+   * Get global network data for monitoring agent analysis
+   */
+  async getGlobalNetworkData(): Promise<NetworkTrafficData> {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/network/global`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error("Error fetching global network data:", error);
+      // Fallback to demo data if backend is unavailable
+      console.warn("Falling back to demo global network data");
+      return this.generateDemoGlobalNetworkData();
+    }
+  }
+
+  /**
    * Check if the backend is available and healthy
    */
   async checkBackendHealth(): Promise<boolean> {
@@ -199,6 +220,78 @@ class NetworkDataService {
 
     return {
       country: country,
+      timestamp: new Date().toISOString(),
+      nodes: nodes,
+      edges: edges,
+      total_traffic: totalTraffic,
+      attack_count: attackCount,
+      suspicious_count: suspiciousCount,
+      normal_count: normalCount
+    };
+  }
+
+  /**
+   * Generate demo global network data for monitoring agent analysis
+   */
+  generateDemoGlobalNetworkData(): NetworkTrafficData {
+    const countries = ["Global", "Multiple", "Worldwide"];
+    const cities = ["Global Hub", "International Gateway", "World Network"];
+    const nodeTypes = ["server", "client", "router", "firewall", "database"];
+    const statuses = ["normal", "suspicious", "attacked", "blocked"];
+    const connectionTypes = ["normal", "suspicious", "attack"];
+
+    const nodes: NetworkNode[] = [];
+    const edges: NetworkEdge[] = [];
+    
+    // Generate 50-100 nodes for global view
+    const nodeCount = Math.floor(Math.random() * 51) + 50;
+    
+    for (let i = 0; i < nodeCount; i++) {
+      const node: NetworkNode = {
+        id: `global_node_${i}`,
+        ip: `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
+        country: countries[Math.floor(Math.random() * countries.length)],
+        city: cities[Math.floor(Math.random() * cities.length)],
+        latitude: Math.random() * 180 - 90,
+        longitude: Math.random() * 360 - 180,
+        node_type: nodeTypes[Math.floor(Math.random() * nodeTypes.length)],
+        status: statuses[Math.floor(Math.random() * statuses.length)],
+        traffic_volume: Math.floor(Math.random() * 50000) + 1000,
+        last_seen: new Date().toISOString()
+      };
+      nodes.push(node);
+    }
+
+    // Generate 80-150 edges for global view
+    const edgeCount = Math.floor(Math.random() * 71) + 80;
+    
+    for (let i = 0; i < edgeCount; i++) {
+      const source = nodes[Math.floor(Math.random() * nodes.length)];
+      const target = nodes[Math.floor(Math.random() * nodes.length)];
+      
+      if (source.id !== target.id) {
+        const connectionType = connectionTypes[Math.floor(Math.random() * connectionTypes.length)];
+        const edge: NetworkEdge = {
+          id: `global_edge_${i}`,
+          source_id: source.id,
+          target_id: target.id,
+          connection_type: connectionType,
+          bandwidth: Math.floor(Math.random() * 10000) + 100,
+          latency: Math.random() * 200 + 10,
+          packet_count: Math.floor(Math.random() * 50000) + 100,
+          attack_type: connectionType === "attack" ? "ddos" : undefined
+        };
+        edges.push(edge);
+      }
+    }
+
+    const totalTraffic = nodes.reduce((sum, node) => sum + node.traffic_volume, 0);
+    const attackCount = edges.filter(edge => edge.connection_type === "attack").length;
+    const suspiciousCount = edges.filter(edge => edge.connection_type === "suspicious").length;
+    const normalCount = edges.filter(edge => edge.connection_type === "normal").length;
+
+    return {
+      country: "Global",
       timestamp: new Date().toISOString(),
       nodes: nodes,
       edges: edges,

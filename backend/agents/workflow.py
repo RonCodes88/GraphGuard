@@ -59,19 +59,109 @@ class AgentWorkflow:
         workflow.add_node("judge", self._judge_node)
         workflow.add_node("mitigator", self._mitigator_node)
         
-        # Define the workflow edges - sequential for now
+        # Define the workflow edges with conditional routing
         workflow.set_entry_point("orchestrator")
         
-        # Sequential flow: orchestrator -> detector -> investigator -> monitor -> judge -> mitigator
-        workflow.add_edge("orchestrator", "detector")
-        workflow.add_edge("detector", "investigator")
-        workflow.add_edge("investigator", "monitor")
+        # Conditional routing based on orchestrator decision
+        workflow.add_conditional_edges(
+            "orchestrator",
+            self._route_after_orchestrator,
+            {
+                "full_analysis": "detector",
+                "monitoring_only": "monitor",
+                "skip_to_judge": "judge"
+            }
+        )
+        
+        # After detector - route to investigator if threats detected
+        workflow.add_conditional_edges(
+            "detector", 
+            self._route_after_detector,
+            {
+                "investigate": "investigator",
+                "skip_to_monitor": "monitor",
+                "no_threats": "monitor"
+            }
+        )
+        
+        # After investigator - always go to judge for decision
+        workflow.add_edge("investigator", "judge")
+        
+        # After monitor - go to judge for final decision
         workflow.add_edge("monitor", "judge")
-        workflow.add_edge("judge", "mitigator")
+        
+        # After judge - conditional routing to mitigator
+        workflow.add_conditional_edges(
+            "judge",
+            self._route_after_judge,
+            {
+                "mitigate": "mitigator",
+                "no_action": END,
+                "human_review": END
+            }
+        )
+        
+        # Mitigator is final step
         workflow.add_edge("mitigator", END)
         
         # Compile the graph
         self.graph = workflow.compile(checkpointer=self.memory)
+    
+    def _route_after_orchestrator(self, state: AgentState) -> str:
+        """Route after orchestrator based on threat level and workflow mode"""
+        orchestrator_decision = state.get("orchestrator_decision")
+        if not orchestrator_decision:
+            return "full_analysis"
+        
+        metadata = orchestrator_decision.metadata
+        threat_level = metadata.get("threat_level", "NONE")
+        workflow_mode = metadata.get("workflow_mode", "full_analysis")
+        
+        if workflow_mode == "monitoring_only":
+            return "monitoring_only"
+        elif threat_level == "NONE":
+            return "skip_to_judge"  # Skip directly to judge for final decision
+        else:
+            return "full_analysis"  # Go to detector for threat analysis
+    
+    def _route_after_detector(self, state: AgentState) -> str:
+        """Route after detector based on threats detected"""
+        detector_decision = state.get("detector_decision")
+        if not detector_decision:
+            return "no_threats"
+        
+        metadata = detector_decision.metadata
+        threats_detected = metadata.get("threats_detected", [])
+        overall_assessment = metadata.get("overall_assessment", {})
+        recommended_action = overall_assessment.get("recommended_action", "none")
+        
+        # If threats detected and need investigation
+        if threats_detected and recommended_action in ["investigate", "immediate_response"]:
+            return "investigate"
+        elif recommended_action == "monitor":
+            return "skip_to_monitor"
+        else:
+            return "no_threats"
+    
+    def _route_after_judge(self, state: AgentState) -> str:
+        """Route after judge based on final assessment"""
+        judge_decision = state.get("judge_decision")
+        if not judge_decision:
+            return "no_action"
+        
+        metadata = judge_decision.metadata
+        final_assessment = metadata.get("final_assessment", {})
+        
+        requires_action = final_assessment.get("requires_immediate_action", False)
+        automated_approved = final_assessment.get("automated_response_approved", False)
+        human_required = final_assessment.get("human_intervention_required", False)
+        
+        if human_required:
+            return "human_review"
+        elif requires_action and automated_approved:
+            return "mitigate"
+        else:
+            return "no_action"
     
     async def _orchestrator_node(self, state: AgentState) -> AgentState:
         """
@@ -305,10 +395,10 @@ class AgentWorkflow:
         context = state.get("context", {})
         orchestrator_analysis = context.get("orchestrator_analysis", {})
         
-        # Initialize GPT-4o-mini
+        # Initialize fast model for detection
         llm = ChatOpenAI(
-            model="gpt-4o-mini",
-            temperature=0.2,  # Low temperature for analytical tasks
+            model=config.fast_model,
+            temperature=config.fast_model_temperature,  # Low temperature for analytical tasks
             api_key=config.openai_api_key
         )
         
@@ -478,7 +568,7 @@ Perform threat detection analysis and return a comprehensive JSON report.""")
                 "graph_anomalies": graph_anomalies,
                 "flagged_ips": flagged_ips,
                 "overall_assessment": overall_assessment,
-                "llm_model": "gpt-4o-mini",
+                "llm_model": config.fast_model,
                 "llm_powered": True
             }
         )
@@ -491,7 +581,7 @@ Perform threat detection analysis and return a comprehensive JSON report.""")
     
     async def _investigator_node(self, state: AgentState) -> AgentState:
         """
-        Investigator agent node - LLM-powered deep analysis using GPT-4o
+        Investigator agent node - LLM-powered deep analysis using fast model
         
         Responsibilities:
         1. Perform deep analysis on flagged network activity from Detector
@@ -508,10 +598,10 @@ Perform threat detection analysis and return a comprehensive JSON report.""")
         detector_decision = state.get("detector_decision")
         detector_metadata = detector_decision.metadata if detector_decision else {}
         
-        # Initialize GPT-4o (most capable model for deep analysis)
+        # Initialize GPT-4o-mini (faster model for analysis with good reasoning)
         llm = ChatOpenAI(
-            model="gpt-4o",
-            temperature=0.1,  # Very low temperature for analytical precision
+            model=config.fast_model,
+            temperature=config.fast_model_temperature,  # Balanced temperature for speed and precision
             api_key=config.openai_api_key
         )
         
@@ -751,7 +841,7 @@ Conduct comprehensive investigation and return a detailed JSON forensic report."
                     "threats_count": len(detector_metadata.get("threats_detected", [])),
                     "flagged_ips_count": len(detector_metadata.get("flagged_ips", []))
                 },
-                "llm_model": "gpt-4o",
+                "llm_model": config.fast_model,
                 "llm_powered": True
             }
         )
@@ -764,7 +854,7 @@ Conduct comprehensive investigation and return a detailed JSON forensic report."
     
     async def _monitor_node(self, state: AgentState) -> AgentState:
         """
-        Monitor agent node - LLM-powered monitoring and log summarization using GPT-3.5-Turbo
+        Monitor agent node - LLM-powered monitoring and log summarization using fast model
         
         Responsibilities:
         1. Translate logs and events into plain-English summaries using AI
@@ -776,10 +866,10 @@ Conduct comprehensive investigation and return a detailed JSON forensic report."
         context = state.get("context", {})
         orchestrator_analysis = context.get("orchestrator_analysis", {})
         
-        # Initialize GPT-3.5-Turbo
+        # Initialize fast model for monitoring
         llm = ChatOpenAI(
-            model="gpt-3.5-turbo",
-            temperature=0.3,  # Slightly creative but mostly factual
+            model=config.fast_model,
+            temperature=config.fast_model_temperature,  # Balanced temperature for summarization
             api_key=config.openai_api_key
         )
         
@@ -928,28 +1018,416 @@ Generate a comprehensive JSON monitoring report.""")
         return datetime.now().isoformat()
     
     async def _judge_node(self, state: AgentState) -> AgentState:
-        """Judge agent node - placeholder for now"""
-        # TODO: Implement judge logic
+        """
+        Judge agent node - LLM-powered decision arbitration using fast model
+        
+        Responsibilities:
+        1. Aggregate findings from Detector, Investigator, and Monitor
+        2. Evaluate conflicting information and make final decisions
+        3. Assign confidence and risk scores
+        4. Provide reasoning in plain English for security teams
+        """
+        input_data = state["input_data"]
+        context = state.get("context", {})
+        
+        # Get decisions from all previous agents
+        orchestrator_decision = state.get("orchestrator_decision")
+        detector_decision = state.get("detector_decision")
+        investigator_decision = state.get("investigator_decision")
+        monitor_decision = state.get("monitor_decision")
+        
+        # Initialize GPT-4o-mini for faster final decision making
+        llm = ChatOpenAI(
+            model=config.fast_model,
+            temperature=config.fast_model_temperature,  # Balanced temperature for speed and precision
+            api_key=config.openai_api_key
+        )
+        
+        # Create judge prompt
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", """You are an AI-powered security judge responsible for making final decisions in cybersecurity incidents.
+
+Your role:
+- Aggregate findings from Detector, Investigator, and Monitor agents
+- Resolve conflicts between agent recommendations
+- Make final decisions on threat severity and required actions
+- Provide clear reasoning for security teams
+- Determine if automated mitigation should be applied
+
+You will receive:
+1. Orchestrator's initial threat assessment
+2. Detector's threat findings and flagged entities
+3. Investigator's forensic analysis and attack details
+4. Monitor's health assessment and trends
+
+You must generate a JSON response with:
+{{
+  "final_assessment": {{
+    "threat_level": "NONE" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
+    "confidence": 0.0-1.0,
+    "requires_immediate_action": bool,
+    "automated_response_approved": bool,
+    "human_intervention_required": bool
+  }},
+  "decision_summary": {{
+    "primary_threat": "Description of main threat",
+    "attack_in_progress": bool,
+    "coordinated_campaign": bool,
+    "business_impact": "low" | "medium" | "high" | "critical"
+  }},
+  "conflict_resolution": [
+    {{
+      "conflict": "Description of conflicting agent findings",
+      "resolution": "How the conflict was resolved",
+      "confidence": 0.0-1.0
+    }}
+  ],
+  "action_recommendations": {{
+    "immediate_actions": ["Action 1", "Action 2"],
+    "investigation_actions": ["Action 1", "Action 2"],
+    "monitoring_actions": ["Action 1", "Action 2"],
+    "escalation_required": bool
+  }},
+  "risk_scoring": {{
+    "overall_risk_score": 0-100,
+    "data_exposure_risk": 0-100,
+    "service_disruption_risk": 0-100,
+    "reputation_risk": 0-100
+  }},
+  "reasoning": "Plain-English explanation of the decision process",
+  "next_steps": "What should happen next"
+}}
+
+Decision guidelines:
+- Consider the confidence levels from all agents
+- Prioritize high-confidence findings over low-confidence ones
+- Look for consensus between Detector and Investigator
+- Consider Monitor's health trends and patterns
+- Err on the side of caution for critical threats
+- Provide actionable recommendations
+- Explain reasoning clearly for human review"""),
+            ("human", """Make final security decisions based on agent findings:
+
+ORCHESTRATOR ANALYSIS:
+{orchestrator_analysis}
+
+DETECTOR FINDINGS:
+{detector_findings}
+
+INVESTIGATOR FINDINGS:
+{investigator_findings}
+
+MONITOR FINDINGS:
+{monitor_findings}
+
+NETWORK DATA:
+{nodes}
+{edges}
+
+Provide final judgment and recommendations.""")
+        ])
+        
+        # Prepare agent findings for LLM
+        agent_findings = {
+            "orchestrator": {
+                "decision": orchestrator_decision.decision if orchestrator_decision else "no_data",
+                "confidence": orchestrator_decision.confidence if orchestrator_decision else 0,
+                "reasoning": orchestrator_decision.reasoning if orchestrator_decision else "",
+                "metadata": orchestrator_decision.metadata if orchestrator_decision else {}
+            },
+            "detector": {
+                "decision": detector_decision.decision if detector_decision else "no_data",
+                "confidence": detector_decision.confidence if detector_decision else 0,
+                "reasoning": detector_decision.reasoning if detector_decision else "",
+                "metadata": detector_decision.metadata if detector_decision else {}
+            },
+            "investigator": {
+                "decision": investigator_decision.decision if investigator_decision else "no_data",
+                "confidence": investigator_decision.confidence if investigator_decision else 0,
+                "reasoning": investigator_decision.reasoning if investigator_decision else "",
+                "metadata": investigator_decision.metadata if investigator_decision else {}
+            },
+            "monitor": {
+                "decision": monitor_decision.decision if monitor_decision else "no_data",
+                "confidence": monitor_decision.confidence if monitor_decision else 0,
+                "reasoning": monitor_decision.reasoning if monitor_decision else "",
+                "metadata": monitor_decision.metadata if monitor_decision else {}
+            }
+        }
+        
+        # Invoke LLM
+        try:
+            chain = prompt | llm
+            response = await chain.ainvoke({
+                "orchestrator_analysis": json.dumps(context.get("orchestrator_analysis", {}), indent=2),
+                "detector_findings": json.dumps(agent_findings["detector"], indent=2),
+                "investigator_findings": json.dumps(agent_findings["investigator"], indent=2),
+                "monitor_findings": json.dumps(agent_findings["monitor"], indent=2),
+                "nodes": json.dumps(input_data.get("nodes", []), indent=2),
+                "edges": json.dumps(input_data.get("edges", []), indent=2)
+            })
+            
+            # Parse LLM response
+            llm_output = response.content
+            
+            # Extract JSON from response
+            if "```json" in llm_output:
+                llm_output = llm_output.split("```json")[1].split("```")[0].strip()
+            elif "```" in llm_output:
+                llm_output = llm_output.split("```")[1].split("```")[0].strip()
+            
+            judge_data = json.loads(llm_output)
+            
+            # Extract key fields
+            final_assessment = judge_data.get("final_assessment", {})
+            decision_summary = judge_data.get("decision_summary", {})
+            conflict_resolution = judge_data.get("conflict_resolution", [])
+            action_recommendations = judge_data.get("action_recommendations", {})
+            risk_scoring = judge_data.get("risk_scoring", {})
+            reasoning = judge_data.get("reasoning", "Judgment complete")
+            next_steps = judge_data.get("next_steps", "Continue monitoring")
+            
+            # Determine decision
+            threat_level = final_assessment.get("threat_level", "NONE")
+            if threat_level == "CRITICAL":
+                decision = "critical_threat_confirmed"
+            elif threat_level == "HIGH":
+                decision = "high_threat_confirmed"
+            elif threat_level == "MEDIUM":
+                decision = "medium_threat_confirmed"
+            elif threat_level == "LOW":
+                decision = "low_threat_confirmed"
+            else:
+                decision = "no_threat_detected"
+            
+            confidence = final_assessment.get("confidence", 0.8)
+            
+        except Exception as e:
+            # Fallback if LLM fails
+            print(f"Judge LLM failed: {e}. Using fallback.")
+            final_assessment = {"threat_level": "NONE", "confidence": 0.5}
+            decision_summary = {"primary_threat": "Analysis failed"}
+            conflict_resolution = []
+            action_recommendations = {"immediate_actions": []}
+            risk_scoring = {"overall_risk_score": 0}
+            reasoning = f"Judge agent encountered an error: {str(e)}"
+            next_steps = "Manual review required"
+            decision = "judgment_error"
+            confidence = 0.3
+        
+        # Create judge decision
         state["judge_decision"] = AgentDecision(
             agent_id="judge",
-            decision="no_action_required",
-            confidence=0.85,
-            reasoning="All agents report normal conditions"
+            decision=decision,
+            confidence=confidence,
+            reasoning=reasoning,
+            metadata={
+                "final_assessment": final_assessment,
+                "decision_summary": decision_summary,
+                "conflict_resolution": conflict_resolution,
+                "action_recommendations": action_recommendations,
+                "risk_scoring": risk_scoring,
+                "next_steps": next_steps,
+                "llm_model": config.fast_model,
+                "llm_powered": True
+            }
         )
+        
+        # Set final decision in judge node (before routing)
+        state["final_decision"] = state["judge_decision"]
         state["current_step"] = "judge"
+        state["completed_agents"] = state.get("completed_agents", []) + ["judge"]
+        
         return state
     
     async def _mitigator_node(self, state: AgentState) -> AgentState:
-        """Mitigator agent node - placeholder for now"""
-        # TODO: Implement mitigator logic
+        """
+        Mitigator agent node - LLM-powered automated response using fast model
+        
+        Responsibilities:
+        1. Execute mitigation actions based on Judge's decisions
+        2. Apply automated responses (block IPs, throttle traffic, etc.)
+        3. Track effectiveness of mitigation actions
+        4. Provide detailed action logs and results
+        """
+        input_data = state["input_data"]
+        context = state.get("context", {})
+        
+        # Get Judge's decision
+        judge_decision = state.get("judge_decision")
+        judge_metadata = judge_decision.metadata if judge_decision else {}
+        
+        # Initialize fast model for mitigation planning
+        llm = ChatOpenAI(
+            model=config.fast_model,
+            temperature=config.fast_model_temperature,  # Low temperature for consistent actions
+            api_key=config.openai_api_key
+        )
+        
+        # Create mitigator prompt
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", """You are an AI-powered cybersecurity mitigator responsible for executing automated responses to threats.
+
+Your role:
+- Execute mitigation actions based on Judge's final decisions
+- Apply automated responses like IP blocking, traffic throttling, service isolation
+- Track effectiveness of mitigation actions
+- Provide detailed action logs and results
+- Ensure actions are justified and minimally disruptive
+
+You will receive:
+1. Judge's final assessment and action recommendations
+2. Network data and threat details
+3. Previous agent findings
+
+You must generate a JSON response with:
+{{
+  "mitigation_actions": [
+    {{
+      "action_id": "unique_id",
+      "action_type": "block_ip" | "throttle_traffic" | "isolate_node" | "escalate_alert" | "update_firewall" | "quarantine_system" | "none",
+      "target": "ip_address or node_id",
+      "severity": "low" | "medium" | "high" | "critical",
+      "automated": bool,
+      "success_probability": 0.0-1.0,
+      "estimated_impact": "Description of expected impact",
+      "rollback_plan": "How to undo this action if needed"
+    }}
+  ],
+  "action_timeline": [
+    {{
+      "timestamp": "ISO timestamp",
+      "action": "Action description",
+      "status": "pending" | "executed" | "failed" | "completed"
+    }}
+  ],
+  "effectiveness_prediction": {{
+    "threat_reduction": 0-100,
+    "false_positive_risk": 0-100,
+    "business_impact": "low" | "medium" | "high",
+    "estimated_resolution_time": "minutes/hours/days"
+  }},
+  "monitoring_plan": {{
+    "metrics_to_watch": ["metric1", "metric2"],
+    "alert_conditions": ["condition1", "condition2"],
+    "review_schedule": "when to review effectiveness"
+  }},
+  "escalation_triggers": [
+    {{
+      "condition": "If this happens",
+      "action": "Escalate to human"
+    }}
+  ],
+  "summary": "Plain-English summary of mitigation actions taken",
+  "next_review": "When to review and adjust actions"
+}}
+
+Action guidelines:
+- Only execute actions approved by the Judge
+- Prioritize automated actions for immediate threats
+- Consider business impact and false positive risks
+- Provide clear rollback plans
+- Set up monitoring for action effectiveness
+- Escalate complex situations to humans
+- Document all actions for audit trails"""),
+            ("human", """Execute mitigation actions based on the Judge's decision:
+
+JUDGE'S FINAL ASSESSMENT:
+{judge_assessment}
+
+ACTION RECOMMENDATIONS:
+{action_recommendations}
+
+NETWORK DATA:
+{nodes}
+{edges}
+
+Execute appropriate mitigation actions and return detailed results.""")
+        ])
+        
+        # Invoke LLM
+        try:
+            chain = prompt | llm
+            response = await chain.ainvoke({
+                "judge_assessment": json.dumps(judge_metadata.get("final_assessment", {}), indent=2),
+                "action_recommendations": json.dumps(judge_metadata.get("action_recommendations", {}), indent=2),
+                "nodes": json.dumps(input_data.get("nodes", []), indent=2),
+                "edges": json.dumps(input_data.get("edges", []), indent=2)
+            })
+            
+            # Parse LLM response
+            llm_output = response.content
+            
+            # Extract JSON from response
+            if "```json" in llm_output:
+                llm_output = llm_output.split("```json")[1].split("```")[0].strip()
+            elif "```" in llm_output:
+                llm_output = llm_output.split("```")[1].split("```")[0].strip()
+            
+            mitigator_data = json.loads(llm_output)
+            
+            # Extract key fields
+            mitigation_actions = mitigator_data.get("mitigation_actions", [])
+            action_timeline = mitigator_data.get("action_timeline", [])
+            effectiveness_prediction = mitigator_data.get("effectiveness_prediction", {})
+            monitoring_plan = mitigator_data.get("monitoring_plan", {})
+            escalation_triggers = mitigator_data.get("escalation_triggers", [])
+            summary = mitigator_data.get("summary", "Mitigation actions executed")
+            next_review = mitigator_data.get("next_review", "Monitor and review")
+            
+            # Determine decision based on actions
+            if not mitigation_actions or all(a.get("action_type") == "none" for a in mitigation_actions):
+                decision = "no_mitigation_required"
+            elif any(a.get("severity") == "critical" for a in mitigation_actions):
+                decision = "critical_mitigation_executed"
+            elif any(a.get("automated") for a in mitigation_actions):
+                decision = "automated_mitigation_executed"
+            else:
+                decision = "mitigation_planned"
+            
+            # Calculate confidence based on action success probability
+            if mitigation_actions:
+                avg_success = sum(a.get("success_probability", 0.5) for a in mitigation_actions) / len(mitigation_actions)
+                confidence = round(avg_success, 2)
+            else:
+                confidence = 0.9  # High confidence when no action needed
+            
+        except Exception as e:
+            # Fallback if LLM fails
+            print(f"Mitigator LLM failed: {e}. Using fallback.")
+            mitigation_actions = [{"action_type": "none", "reason": "Mitigation failed due to error"}]
+            action_timeline = []
+            effectiveness_prediction = {"threat_reduction": 0}
+            monitoring_plan = {}
+            escalation_triggers = []
+            summary = f"Mitigator agent encountered an error: {str(e)}"
+            next_review = "Manual intervention required"
+            decision = "mitigation_error"
+            confidence = 0.3
+        
+        # Create mitigator decision
         state["mitigator_decision"] = AgentDecision(
             agent_id="mitigator",
-            decision="no_mitigation_needed",
-            confidence=0.9,
-            reasoning="No threats detected requiring mitigation"
+            decision=decision,
+            confidence=confidence,
+            reasoning=summary,
+            metadata={
+                "mitigation_actions": mitigation_actions,
+                "action_timeline": action_timeline,
+                "effectiveness_prediction": effectiveness_prediction,
+                "monitoring_plan": monitoring_plan,
+                "escalation_triggers": escalation_triggers,
+                "next_review": next_review,
+                "llm_model": config.fast_model,
+                "llm_powered": True
+            }
         )
+        
+        # Set final decision
         state["final_decision"] = state["mitigator_decision"]
         state["current_step"] = "mitigator"
+        state["completed_agents"] = state.get("completed_agents", []) + ["mitigator"]
+        
         return state
     
     async def run(self, input_data: Dict[str, Any], context: Dict[str, Any] = None) -> AgentState:
@@ -975,3 +1453,127 @@ Generate a comprehensive JSON monitoring report.""")
         config = {"configurable": {"thread_id": "agent_session_1"}}
         result = await self.graph.ainvoke(initial_state, config=config)
         return result
+    
+    def get_agent_interactions_summary(self, state: AgentState) -> Dict[str, Any]:
+        """Generate a summary of agent interactions for UI display"""
+        interactions = []
+        
+        # Orchestrator interaction
+        if state.get("orchestrator_decision"):
+            decision = state["orchestrator_decision"]
+            interactions.append({
+                "agent": "Orchestrator",
+                "timestamp": decision.timestamp or datetime.now().isoformat(),
+                "action": "Network traffic analysis and routing",
+                "summary": decision.reasoning,
+                "confidence": decision.confidence,
+                "status": "completed",
+                "details": {
+                    "threat_level": decision.metadata.get("threat_level", "UNKNOWN"),
+                    "workflow_mode": decision.metadata.get("workflow_mode", "unknown"),
+                    "total_attacks": decision.metadata.get("statistics", {}).get("attack_count", 0)
+                }
+            })
+        
+        # Detector interaction
+        if state.get("detector_decision"):
+            decision = state["detector_decision"]
+            threats_count = len(decision.metadata.get("threats_detected", []))
+            interactions.append({
+                "agent": "Detector",
+                "timestamp": decision.timestamp or datetime.now().isoformat(),
+                "action": "Threat detection and analysis",
+                "summary": decision.reasoning,
+                "confidence": decision.confidence,
+                "status": "completed",
+                "details": {
+                    "threats_detected": threats_count,
+                    "flagged_ips": len(decision.metadata.get("flagged_ips", [])),
+                    "heavy_hitters": len(decision.metadata.get("heavy_hitters", [])),
+                    "recommended_action": decision.metadata.get("overall_assessment", {}).get("recommended_action", "none")
+                }
+            })
+        
+        # Investigator interaction
+        if state.get("investigator_decision"):
+            decision = state["investigator_decision"]
+            investigations_count = len(decision.metadata.get("investigations", []))
+            interactions.append({
+                "agent": "Investigator",
+                "timestamp": decision.timestamp or datetime.now().isoformat(),
+                "action": "Deep forensic investigation",
+                "summary": decision.reasoning,
+                "confidence": decision.confidence,
+                "status": "completed",
+                "details": {
+                    "investigations_count": investigations_count,
+                    "attack_campaigns": len(decision.metadata.get("attack_campaigns", [])),
+                    "requires_immediate_action": decision.metadata.get("overall_assessment", {}).get("requires_immediate_action", False),
+                    "coordinated_attack": decision.metadata.get("overall_assessment", {}).get("coordinated_attack", False)
+                }
+            })
+        
+        # Monitor interaction
+        if state.get("monitor_decision"):
+            decision = state["monitor_decision"]
+            interactions.append({
+                "agent": "Monitor",
+                "timestamp": decision.timestamp or datetime.now().isoformat(),
+                "action": "Network health monitoring",
+                "summary": decision.reasoning,
+                "confidence": decision.confidence,
+                "status": "completed",
+                "details": {
+                    "network_status": decision.metadata.get("network_status", "unknown"),
+                    "health_score": decision.metadata.get("health_score", 50),
+                    "logs_generated": len(decision.metadata.get("logs", []))
+                }
+            })
+        
+        # Judge interaction
+        if state.get("judge_decision"):
+            decision = state["judge_decision"]
+            interactions.append({
+                "agent": "Judge",
+                "timestamp": decision.timestamp or datetime.now().isoformat(),
+                "action": "Final security decision",
+                "summary": decision.reasoning,
+                "confidence": decision.confidence,
+                "status": "completed",
+                "details": {
+                    "final_threat_level": decision.metadata.get("final_assessment", {}).get("threat_level", "UNKNOWN"),
+                    "requires_immediate_action": decision.metadata.get("final_assessment", {}).get("requires_immediate_action", False),
+                    "automated_response_approved": decision.metadata.get("final_assessment", {}).get("automated_response_approved", False),
+                    "human_intervention_required": decision.metadata.get("final_assessment", {}).get("human_intervention_required", False)
+                }
+            })
+        
+        # Mitigator interaction
+        if state.get("mitigator_decision"):
+            decision = state["mitigator_decision"]
+            actions_count = len(decision.metadata.get("mitigation_actions", []))
+            interactions.append({
+                "agent": "Mitigator",
+                "timestamp": decision.timestamp or datetime.now().isoformat(),
+                "action": "Mitigation actions execution",
+                "summary": decision.reasoning,
+                "confidence": decision.confidence,
+                "status": "completed",
+                "details": {
+                    "actions_executed": actions_count,
+                    "automated_actions": len([a for a in decision.metadata.get("mitigation_actions", []) if a.get("automated", False)]),
+                    "effectiveness_prediction": decision.metadata.get("effectiveness_prediction", {}).get("threat_reduction", 0)
+                }
+            })
+        
+        return {
+            "total_interactions": len(interactions),
+            "workflow_status": state.get("current_step", "unknown"),
+            "completed_agents": state.get("completed_agents", []),
+            "interactions": interactions,
+            "final_decision": {
+                "decision": state.get("final_decision", {}).get("decision", "pending") if state.get("final_decision") else "pending",
+                "confidence": state.get("final_decision", {}).get("confidence", 0) if state.get("final_decision") else 0,
+                "reasoning": state.get("final_decision", {}).get("reasoning", "No final decision yet") if state.get("final_decision") else "No final decision yet"
+            }
+        }

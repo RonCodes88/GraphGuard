@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { networkDataService } from "@/services/networkDataService";
 
 type SeverityLevel = "OK" | "WARN" | "ALERT";
 type IncidentStatus = "monitoring" | "mitigating";
@@ -190,6 +191,19 @@ export default function MonitoringPanel() {
     return () => clearInterval(interval);
   }, []);
 
+  // Trigger monitoring agent analysis periodically
+  useEffect(() => {
+    // Initial analysis
+    analyzeWithMonitoringAgent();
+    
+    // Set up interval for periodic monitoring agent analysis
+    const monitoringInterval = setInterval(() => {
+      analyzeWithMonitoringAgent();
+    }, 30000); // Every 30 seconds
+
+    return () => clearInterval(monitoringInterval);
+  }, []);
+
   const getSeverityColor = (severity: SeverityLevel) => {
     switch (severity) {
       case "ALERT":
@@ -251,10 +265,51 @@ export default function MonitoringPanel() {
       {/* Header */}
       <div className="p-4 border-b border-gray-800 bg-gradient-to-b from-gray-950/50 to-transparent">
         <div className="flex items-center gap-2">
-          <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+          <div className={`w-2 h-2 rounded-full animate-pulse ${
+            isMonitoringAgentActive ? "bg-blue-400" : "bg-white"
+          }`}></div>
           <h1 className="text-xl font-bold tracking-widest">GRAPHGUARD</h1>
+          {isMonitoringAgentActive && (
+            <div className="flex items-center text-blue-400 text-xs">
+              <div className="animate-spin w-3 h-3 border border-blue-400 border-t-transparent rounded-full mr-1"></div>
+              AI Monitoring
+            </div>
+          )}
         </div>
         <p className="text-xs text-gray-600 mt-1 tracking-wide">Network Security Monitor</p>
+        
+        {/* Monitoring Agent Summary */}
+        {monitoringAgentSummary && (
+          <div className="mt-3 p-3 bg-gray-900/50 rounded border border-gray-700">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-blue-400">🤖 AI Monitor</span>
+                <span className={`text-xs px-2 py-0.5 rounded ${
+                  monitoringAgentSummary.network_status === "healthy" ? "bg-green-600 text-white" :
+                  monitoringAgentSummary.network_status === "degraded" ? "bg-yellow-600 text-black" :
+                  monitoringAgentSummary.network_status === "at_risk" ? "bg-orange-600 text-white" :
+                  monitoringAgentSummary.network_status === "critical" ? "bg-red-600 text-white" :
+                  "bg-gray-600 text-white"
+                }`}>
+                  {monitoringAgentSummary.network_status.toUpperCase()}
+                </span>
+              </div>
+              <div className="text-xs text-gray-400">
+                Health: {monitoringAgentSummary.health_score}/100
+              </div>
+            </div>
+            <p className="text-xs text-gray-300 leading-relaxed">
+              {monitoringAgentSummary.summary}
+            </p>
+            {monitoringAgentSummary.dashboard.threat_level && (
+              <div className="mt-2 text-xs text-gray-400">
+                Threat Level: <span className="text-red-400 font-medium">
+                  {monitoringAgentSummary.dashboard.threat_level}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Scrollable Content */}
