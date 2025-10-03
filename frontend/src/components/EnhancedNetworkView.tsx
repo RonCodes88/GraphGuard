@@ -49,6 +49,23 @@ export default function EnhancedNetworkView({ country, onBack, onAnalyzeWithAgen
   const [loading, setLoading] = useState(true);
   const [useStaticLayout, setUseStaticLayout] = useState(false);
 
+  // Human-in-the-Loop State
+  const [agentStatus, setAgentStatus] = useState({
+    orchestrator: { status: 'idle', progress: 0 },
+    detector: { status: 'idle', progress: 0 },
+    investigator: { status: 'idle', progress: 0 },
+    monitor: { status: 'idle', progress: 0 },
+    judge: { status: 'idle', progress: 0 },
+    mitigator: { status: 'idle', progress: 0 }
+  });
+
+  const [isAgentProcessing, setIsAgentProcessing] = useState(false);
+  const [currentAgent, setCurrentAgent] = useState<string | null>(null);
+  const [agentResults, setAgentResults] = useState<any>(null);
+  const [attackedNodeAnalysis, setAttackedNodeAnalysis] = useState<any>(null);
+  const [showActionPanel, setShowActionPanel] = useState(false);
+  const [isAnalyzingNode, setIsAnalyzingNode] = useState(false);
+
   // Fetch network data
   const fetchNetworkData = async () => {
     try {
@@ -87,6 +104,10 @@ export default function EnhancedNetworkView({ country, onBack, onAnalyzeWithAgen
       };
       
       setNetworkData(sanitizedData);
+      
+      // Debug: Log attacked nodes
+      const attackedNodes = sanitizedData.nodes.filter(n => n.status === "attacked");
+      console.log(`🔴 Found ${attackedNodes.length} attacked nodes:`, attackedNodes);
       
       // Update stats
       const totalPackets = sanitizedEdges.reduce((sum, e) => sum + e.packet_count, 0);
@@ -157,6 +178,189 @@ export default function EnhancedNetworkView({ country, onBack, onAnalyzeWithAgen
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Process network data with AI agents
+  const processWithAgents = async () => {
+    if (!networkData) return;
+    
+    setIsAgentProcessing(true);
+    setAgentResults(null);
+    
+    try {
+      // Reset all agent statuses
+      setAgentStatus({
+        orchestrator: { status: 'processing', progress: 0 },
+        detector: { status: 'idle', progress: 0 },
+        investigator: { status: 'idle', progress: 0 },
+        monitor: { status: 'idle', progress: 0 },
+        judge: { status: 'idle', progress: 0 },
+        mitigator: { status: 'idle', progress: 0 }
+      });
+
+      // Simulate agent processing sequence with realistic timing
+      const agents = [
+        { name: 'orchestrator', duration: 800 },
+        { name: 'detector', duration: 1200 },
+        { name: 'investigator', duration: 1500 },
+        { name: 'monitor', duration: 600 },
+        { name: 'judge', duration: 1000 },
+        { name: 'mitigator', duration: 900 }
+      ];
+      
+      for (let i = 0; i < agents.length; i++) {
+        const agent = agents[i];
+        setCurrentAgent(agent.name);
+        
+        // Update current agent to processing
+        setAgentStatus(prev => ({
+          ...prev,
+          [agent.name]: { status: 'processing', progress: 0 }
+        }));
+        
+        // Simulate processing with progress updates
+        const startTime = Date.now();
+        const interval = setInterval(() => {
+          const elapsed = Date.now() - startTime;
+          const progress = Math.min(100, (elapsed / agent.duration) * 100);
+          
+          setAgentStatus(prev => ({
+            ...prev,
+            [agent.name]: { status: 'processing', progress }
+          }));
+        }, 50);
+        
+        await new Promise(resolve => setTimeout(resolve, agent.duration));
+        clearInterval(interval);
+        
+        // Mark as completed
+        setAgentStatus(prev => ({
+          ...prev,
+          [agent.name]: { status: 'completed', progress: 100 }
+        }));
+      }
+      
+      // Call the backend API
+      const response = await fetch('http://localhost:8000/api/agents/process', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          data: {
+            nodes: networkData.nodes,
+            edges: networkData.edges
+          }
+        })
+      });
+      
+      const result = await response.json();
+      setAgentResults(result);
+      console.log('Agent analysis result:', result);
+      
+    } catch (error) {
+      console.error('Agent processing failed:', error);
+      setAgentStatus(prev => ({
+        ...prev,
+        [currentAgent || 'orchestrator']: { status: 'error', progress: 0 }
+      }));
+    } finally {
+      setIsAgentProcessing(false);
+      setCurrentAgent(null);
+    }
+  };
+
+  // Analyze specific attacked node with AI agents
+  const analyzeAttackedNode = async (node: NetworkNode) => {
+    if (!networkData) return;
+    
+    setIsAnalyzingNode(true);
+    setAttackedNodeAnalysis(null);
+    setShowActionPanel(true);
+    
+    try {
+      // Filter edges related to this attacked node
+      const relatedEdges = networkData.edges.filter(
+        edge => edge.source_id === node.id || edge.target_id === node.id
+      );
+      
+      // Create focused dataset for this node
+      const focusedData = {
+        nodes: [node],
+        edges: relatedEdges,
+        context: {
+          analysis_type: "attacked_node_analysis",
+          target_node: node.id,
+          node_ip: node.ip,
+          node_status: node.status
+        }
+      };
+      
+      console.log(`Analyzing attacked node: ${node.ip} with ${relatedEdges.length} related edges`);
+      
+      // Call the backend API for focused analysis
+      const response = await fetch('http://localhost:8000/api/agents/process', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          data: focusedData,
+          context: {
+            analysis_type: "attacked_node_focus",
+            target_node_id: node.id,
+            target_node_ip: node.ip
+          }
+        })
+      });
+      
+      const result = await response.json();
+      setAttackedNodeAnalysis(result);
+      console.log('Attacked node analysis result:', result);
+      
+    } catch (error) {
+      console.error('Attacked node analysis failed:', error);
+      setAttackedNodeAnalysis({
+        success: false,
+        error: 'Analysis failed',
+        result: null
+      });
+    } finally {
+      setIsAnalyzingNode(false);
+    }
+  };
+
+  // Execute mitigation action
+  const executeAction = async (action: string, nodeId: string) => {
+    try {
+      console.log(`Executing action: ${action} on node: ${nodeId}`);
+      
+      // Here you would typically call your backend to execute the action
+      // For demo purposes, we'll simulate the action
+      
+      const actionResults = {
+        block_ip: "🚫 IP address blocked successfully",
+        throttle_traffic: "⏳ Traffic throttled to 50%",
+        notify_dev: "📧 Development team notified",
+        ignore: "👁️ Monitoring continued, no action taken"
+      };
+      
+      // Update the node status in the network data
+      if (networkData && action !== 'ignore') {
+        const updatedNodes = networkData.nodes.map(n => 
+          n.id === nodeId ? { ...n, status: 'blocked' } : n
+        );
+        setNetworkData({ ...networkData, nodes: updatedNodes });
+      }
+      
+      alert(actionResults[action as keyof typeof actionResults]);
+      setShowActionPanel(false);
+      setAttackedNodeAnalysis(null);
+      
+    } catch (error) {
+      console.error('Action execution failed:', error);
+      alert('Action execution failed');
     }
   };
 
@@ -409,7 +613,14 @@ export default function EnhancedNetworkView({ country, onBack, onAnalyzeWithAgen
         nodes.attr("opacity", 1);
       })
       .on("click", function(event, d) {
-        setSelectedNode(d);
+        // If it's an attacked node, trigger AI analysis
+        if (d.status === "attacked") {
+          console.log(`🔴 Clicked attacked node: ${d.ip}`);
+          analyzeAttackedNode(d);
+        } else {
+          // For other nodes, show regular details
+          setSelectedNode(d);
+        }
       });
 
     // Function to update positions
@@ -767,6 +978,180 @@ export default function EnhancedNetworkView({ country, onBack, onAnalyzeWithAgen
           </div>
         </div>
       </div>
+
+      {/* Agent Status Panel */}
+      <div className="absolute top-4 right-4 bg-black/80 text-white p-4 rounded-lg backdrop-blur-sm border border-blue-500/30">
+        <h3 className="text-lg font-bold mb-3">🤖 AI Agents</h3>
+        <div className="space-y-2">
+          {Object.entries(agentStatus).map(([agentName, status]) => (
+            <div key={agentName} className="flex items-center space-x-2">
+              <div className={`w-3 h-3 rounded-full ${
+                status.status === 'processing' ? 'bg-blue-400 animate-pulse' :
+                status.status === 'completed' ? 'bg-green-400' :
+                status.status === 'error' ? 'bg-red-400' : 'bg-gray-400'
+              }`} />
+              <span className="text-sm capitalize">{agentName}</span>
+              {status.status === 'processing' && (
+                <div className="flex-1 bg-gray-600 rounded-full h-2 ml-2">
+                  <div 
+                    className="bg-blue-400 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${status.progress}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        {isAgentProcessing && (
+          <div className="mt-3 text-xs text-blue-300">
+            🔄 {currentAgent} analyzing network...
+          </div>
+        )}
+        {agentResults && (
+          <div className="mt-3 p-2 bg-green-900/50 rounded text-xs">
+            <div className="font-bold text-green-300">✅ Analysis Complete</div>
+            <div className="text-green-200">Decision: {agentResults.result?.decision}</div>
+            <div className="text-green-200">Confidence: {(agentResults.confidence * 100).toFixed(1)}%</div>
+          </div>
+        )}
+      </div>
+
+      {/* Process Button */}
+      <button
+        onClick={processWithAgents}
+        disabled={isAgentProcessing || !networkData}
+        className="absolute bottom-4 left-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-6 py-3 rounded-lg transition-colors font-medium shadow-lg"
+      >
+        {isAgentProcessing ? (
+          <>
+            <span className="animate-spin mr-2">🔄</span>
+            AI Agents Working...
+          </>
+        ) : (
+          <>
+            <span className="mr-2">🤖</span>
+            Analyze with AI Agents
+          </>
+        )}
+      </button>
+
+
+      {/* Human-in-the-Loop Action Panel */}
+      {showActionPanel && (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-slate-900 border border-red-500/50 rounded-xl p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold text-red-300">🚨 Attacked Node Analysis</h2>
+              <button
+                onClick={() => setShowActionPanel(false)}
+                className="text-slate-400 hover:text-white transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {isAnalyzingNode ? (
+              <div className="text-center py-8">
+                <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+                <p className="text-blue-300">🤖 AI Agents analyzing the attack...</p>
+                <div className="mt-4 space-y-2">
+                  {Object.entries(agentStatus).map(([agentName, status]) => (
+                    <div key={agentName} className="flex items-center space-x-2 text-sm">
+                      <div className={`w-2 h-2 rounded-full ${
+                        status.status === 'processing' ? 'bg-blue-400 animate-pulse' :
+                        status.status === 'completed' ? 'bg-green-400' : 'bg-gray-400'
+                      }`} />
+                      <span className="capitalize text-slate-300">{agentName}</span>
+                      {status.status === 'processing' && (
+                        <div className="flex-1 bg-gray-600 rounded-full h-1">
+                          <div 
+                            className="bg-blue-400 h-1 rounded-full transition-all duration-300"
+                            style={{ width: `${status.progress}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : attackedNodeAnalysis ? (
+              <div className="space-y-4">
+                {/* Agent Analysis Results */}
+                <div className="bg-slate-800 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-white mb-3">🔍 AI Analysis Results</h3>
+                  
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <span className="text-slate-400 text-sm">Decision:</span>
+                      <div className="text-white font-medium">{attackedNodeAnalysis.result?.decision || 'Unknown'}</div>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 text-sm">Confidence:</span>
+                      <div className="text-green-300 font-medium">
+                        {attackedNodeAnalysis.confidence ? (attackedNodeAnalysis.confidence * 100).toFixed(1) + '%' : 'Unknown'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mb-4">
+                    <span className="text-slate-400 text-sm">Reasoning:</span>
+                    <div className="text-slate-200 text-sm mt-1 bg-slate-700 p-3 rounded">
+                      {attackedNodeAnalysis.explanation || 'No reasoning provided'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="bg-slate-800 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-white mb-3">⚡ Take Action</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => executeAction('block_ip', attackedNodeAnalysis.result?.metadata?.target_node_id || '')}
+                      className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center justify-center space-x-2"
+                    >
+                      <span>🚫</span>
+                      <span>Block IP</span>
+                    </button>
+                    <button
+                      onClick={() => executeAction('throttle_traffic', attackedNodeAnalysis.result?.metadata?.target_node_id || '')}
+                      className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center justify-center space-x-2"
+                    >
+                      <span>⏳</span>
+                      <span>Throttle Traffic</span>
+                    </button>
+                    <button
+                      onClick={() => executeAction('notify_dev', attackedNodeAnalysis.result?.metadata?.target_node_id || '')}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center justify-center space-x-2"
+                    >
+                      <span>📧</span>
+                      <span>Notify Dev Team</span>
+                    </button>
+                    <button
+                      onClick={() => executeAction('ignore', attackedNodeAnalysis.result?.metadata?.target_node_id || '')}
+                      className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center justify-center space-x-2"
+                    >
+                      <span>👁️</span>
+                      <span>Continue Monitoring</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-slate-300">Failed to analyze the attacked node.</p>
+                <button
+                  onClick={() => setShowActionPanel(false)}
+                  className="mt-4 bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded-lg transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

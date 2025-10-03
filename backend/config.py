@@ -22,8 +22,16 @@ class AgentConfig(BaseSettings):
     agent_explainability_enabled: bool = True
     
     # Model Settings
-    model_name: str = "gpt-4"
+    model_name: str = "gpt-4o-mini"  # Default to fastest model
     model_temperature: float = 0.1
+    
+    # Fast model settings for speed-critical agents
+    fast_model: str = "gpt-4o-mini"
+    fast_model_temperature: float = 0.2
+    
+    # Standard model for complex reasoning (when needed)
+    standard_model: str = "gpt-4o"
+    standard_model_temperature: float = 0.1
     
     class Config:
         env_file = ".env"

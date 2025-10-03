@@ -6,6 +6,7 @@ import NetworkViewTest from "@/components/NetworkViewTest";
 import MonitoringPanel from "@/components/MonitoringPanel";
 import AgentResultsPanel from "@/components/AgentResultsPanel";
 
+
 export default function Home() {
   const [isCountryViewActive, setIsCountryViewActive] = useState(false);
   const [isAgentResultsOpen, setIsAgentResultsOpen] = useState(false);
@@ -76,7 +77,6 @@ export default function Home() {
         selectedNode={selectedNode}
         isLoading={isAnalyzing}
       />
-      
     </main>
   );
 }

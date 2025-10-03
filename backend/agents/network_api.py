@@ -415,4 +415,3 @@ async def get_global_network_data():
         suspicious_count=total_suspicious_count,
         normal_count=total_normal_count
     )
-    
