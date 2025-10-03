@@ -349,8 +349,8 @@ export default function NetworkVisualization({
       
       {/* Hover tooltips */}
       {hoveredNode && (
-        <div className="absolute pointer-events-none z-50 bg-slate-900/95 backdrop-blur-md rounded-lg p-3 border border-cyan-500/30">
-          <div className="text-cyan-300 font-bold">{hoveredNode.ip}</div>
+        <div className="absolute pointer-events-none z-50 bg-slate-900/95 backdrop-blur-md rounded-lg p-3 border border-purple-500/30">
+          <div className="text-purple-300 font-bold">{hoveredNode.ip}</div>
           <div className="text-sm text-slate-300">{hoveredNode.city}, {hoveredNode.country}</div>
           <div className="text-xs text-slate-400">
             Type: {hoveredNode.node_type} | Status: {hoveredNode.status}
@@ -362,8 +362,8 @@ export default function NetworkVisualization({
       )}
       
       {hoveredEdge && (
-        <div className="absolute pointer-events-none z-50 bg-slate-900/95 backdrop-blur-md rounded-lg p-3 border border-cyan-500/30">
-          <div className="text-cyan-300 font-bold">Connection</div>
+        <div className="absolute pointer-events-none z-50 bg-slate-900/95 backdrop-blur-md rounded-lg p-3 border border-purple-500/30">
+          <div className="text-purple-300 font-bold">Connection</div>
           <div className="text-sm text-slate-300">
             {hoveredEdge.source_id} → {hoveredEdge.target_id}
           </div>

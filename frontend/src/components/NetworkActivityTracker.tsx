@@ -45,12 +45,12 @@ export default function NetworkActivityTracker({
         top: `${position.y - 20}px`,
       }}
     >
-      <div className="bg-gradient-to-br from-slate-900/95 to-slate-800/95 backdrop-blur-md rounded-2xl shadow-2xl border border-cyan-500/30 px-6 py-4 min-w-[300px] max-w-[400px] transform transition-all duration-200">
+      <div className="bg-gradient-to-br from-slate-900/95 to-slate-800/95 backdrop-blur-md rounded-2xl shadow-2xl border border-purple-500/30 px-6 py-4 min-w-[300px] max-w-[400px] transform transition-all duration-200">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>
-            <h3 className="text-cyan-300 text-lg font-bold tracking-wide">
+            <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></div>
+            <h3 className="text-purple-300 text-lg font-bold tracking-wide">
               {data.country}
             </h3>
           </div>
@@ -73,7 +73,7 @@ export default function NetworkActivityTracker({
             </div>
             <div className="flex justify-between items-center">
               <span className="text-slate-400">Connections:</span>
-              <span className="text-blue-300 font-medium">{data.edges.length}</span>
+              <span className="text-purple-300 font-medium">{data.edges.length}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-slate-400">Active Attacks:</span>
@@ -89,7 +89,7 @@ export default function NetworkActivityTracker({
             </div>
             <div className="flex justify-between items-center">
               <span className="text-slate-400">Total Traffic:</span>
-              <span className="text-cyan-300 font-medium">{data.total_traffic.toLocaleString()}</span>
+              <span className="text-purple-300 font-medium">{data.total_traffic.toLocaleString()}</span>
             </div>
           </div>
 
@@ -113,14 +113,14 @@ export default function NetworkActivityTracker({
           {/* Node List */}
           <div className="pt-3 border-t border-slate-700/50">
             <h4 className="text-slate-300 text-sm font-medium mb-2">Network Nodes</h4>
-            <div className="max-h-32 overflow-y-auto space-y-1">
+            <div className="max-h-32 overflow-y-auto space-y-1 scrollbar-thin scrollbar-track-slate-800 scrollbar-thumb-slate-600 hover:scrollbar-thumb-slate-500">
               {data.nodes.slice(0, 10).map((node) => (
                 <div
                   key={node.id}
                   onClick={() => handleNodeClick(node)}
                   className={`flex items-center justify-between p-2 rounded cursor-pointer transition-colors ${
                     selectedNode?.id === node.id 
-                      ? 'bg-cyan-500/20 border border-cyan-500/30' 
+                      ? 'bg-purple-500/20 border border-purple-500/30' 
                       : 'hover:bg-slate-700/50'
                   }`}
                 >
@@ -149,14 +149,14 @@ export default function NetworkActivityTracker({
           {/* Edge List */}
           <div className="pt-3 border-t border-slate-700/50">
             <h4 className="text-slate-300 text-sm font-medium mb-2">Connections</h4>
-            <div className="max-h-32 overflow-y-auto space-y-1">
+            <div className="max-h-32 overflow-y-auto space-y-1 scrollbar-thin scrollbar-track-slate-800 scrollbar-thumb-slate-600 hover:scrollbar-thumb-slate-500">
               {data.edges.slice(0, 10).map((edge) => (
                 <div
                   key={edge.id}
                   onClick={() => handleEdgeClick(edge)}
                   className={`flex items-center justify-between p-2 rounded cursor-pointer transition-colors ${
                     selectedEdge?.id === edge.id 
-                      ? 'bg-cyan-500/20 border border-cyan-500/30' 
+                      ? 'bg-purple-500/20 border border-purple-500/30' 
                       : 'hover:bg-slate-700/50'
                   }`}
                 >
@@ -190,7 +190,7 @@ export default function NetworkActivityTracker({
               <div className="space-y-1 text-xs">
                 <div className="flex justify-between">
                   <span className="text-slate-400">IP:</span>
-                  <span className="text-cyan-300">{selectedNode.ip}</span>
+                  <span className="text-purple-300">{selectedNode.ip}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Type:</span>
@@ -255,8 +255,8 @@ export default function NetworkActivityTracker({
         </div>
 
         {/* Decorative elements */}
-        <div className="absolute -bottom-1 -left-1 w-8 h-8 bg-cyan-500/20 rounded-full blur-xl"></div>
-        <div className="absolute -top-1 -right-1 w-6 h-6 bg-blue-500/20 rounded-full blur-lg"></div>
+        <div className="absolute -bottom-1 -left-1 w-8 h-8 bg-purple-500/20 rounded-full blur-xl"></div>
+        <div className="absolute -top-1 -right-1 w-6 h-6 bg-purple-500/20 rounded-full blur-lg"></div>
       </div>
     </div>
   );

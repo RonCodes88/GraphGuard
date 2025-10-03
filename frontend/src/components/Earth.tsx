@@ -6,7 +6,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import getStarfield from "@/utils/getStarfield";
 import { drawThreeGeo } from "@/utils/threeGeoJSON";
 import NetworkActivityTracker from "./NetworkActivityTracker";
-import CountryNetworkView from "./CountryNetworkView";
+import EnhancedNetworkView from "./EnhancedNetworkView";
 import { networkDataService, NetworkTrafficData, NetworkNode, NetworkEdge } from "@/services/networkDataService";
 import { MAJOR_CITIES, getCitiesByCountry } from "@/data/cities";
 
@@ -14,21 +14,11 @@ import { MAJOR_CITIES, getCitiesByCountry } from "@/data/cities";
 export default function Earth() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [networkData, setNetworkData] = useState<NetworkTrafficData | null>(null);
-  const [showNetworkActivityTracker, setShowNetworkActivityTracker] = useState(false);
   const [networkTrackerPosition, setNetworkTrackerPosition] = useState({ x: 0, y: 0 });
   const [loadingNetworkData, setLoadingNetworkData] = useState(false);
-  const [backendAvailable, setBackendAvailable] = useState(false);
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
   const [hoveredCountry, setHoveredCountry] = useState<string | null>(null);
 
-  // Check backend availability on component mount
-  useEffect(() => {
-    const checkBackend = async () => {
-      const isAvailable = await networkDataService.checkBackendHealth();
-      setBackendAvailable(isAvailable);
-    };
-    checkBackend();
-  }, []);
 
   // Function to fetch network data for a country with real-time updates
   const fetchNetworkData = async (country: string) => {
@@ -36,21 +26,15 @@ export default function Earth() {
     try {
       let data: NetworkTrafficData;
       
-      if (backendAvailable) {
-        data = await networkDataService.getCountryNetworkData(country);
-      } else {
-        // Use demo data when backend is not available
-        data = networkDataService.generateDemoNetworkData(country);
-      }
+      // Use demo data
+      data = networkDataService.generateDemoNetworkData(country);
       
       setNetworkData(data);
-      setShowNetworkActivityTracker(true);
     } catch (error) {
       console.error("Failed to fetch network data:", error);
       // Fallback to demo data even if backend call fails
       const demoData = networkDataService.generateDemoNetworkData(country);
       setNetworkData(demoData);
-      setShowNetworkActivityTracker(true);
     } finally {
       setLoadingNetworkData(false);
     }
@@ -71,7 +55,7 @@ export default function Earth() {
     }, 2000); // Update every 2 seconds
 
     return () => clearInterval(interval);
-  }, [hoveredCountry, backendAvailable]);
+  }, [hoveredCountry]);
 
   // Function to handle node clicks in network visualization
   const handleNodeClick = (node: NetworkNode) => {
@@ -86,7 +70,7 @@ export default function Earth() {
   };
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!containerRef.current || selectedCountry) return;
 
     const w = window.innerWidth;
     const h = window.innerHeight;
@@ -353,78 +337,37 @@ export default function Earth() {
       }
       renderer.dispose();
     };
-  }, []);
-
-  // Show country detail view if a country is selected
-  if (selectedCountry) {
-    return <CountryNetworkView country={selectedCountry} onBack={() => setSelectedCountry(null)} />;
-  }
+  }, [selectedCountry]);
 
   return (
-    <div className="relative w-full h-screen">
-      <div ref={containerRef} className="w-full h-screen" />
+    <>
+      {/* Show country detail view if a country is selected */}
+      {selectedCountry && (
+        <EnhancedNetworkView 
+          country={selectedCountry} 
+          onBack={() => setSelectedCountry(null)} 
+        />
+      )}
+      
+      {/* Show Earth globe when no country is selected */}
+      {!selectedCountry && (
+        <div className="relative w-full h-screen">
+          <div ref={containerRef} className="w-full h-screen" />
       
       {/* Network Activity Tracker Overlay */}
       <NetworkActivityTracker
         data={networkData}
-        visible={showNetworkActivityTracker}
+        visible={!!networkData}
         position={networkTrackerPosition}
-        onClose={() => setShowNetworkActivityTracker(false)}
+        onClose={() => setNetworkData(null)}
         onNodeClick={handleNodeClick}
         onEdgeClick={handleEdgeClick}
       />
 
-      {/* Controls Panel */}
-      <div className="absolute top-4 right-4 z-50">
-        <div className="bg-slate-900/95 backdrop-blur-md rounded-lg p-4 border border-cyan-500/30">
-          <div className="flex flex-col gap-3">
-            {/* Backend Status */}
-            <div className="flex items-center gap-2 text-sm">
-              <div className={`w-2 h-2 rounded-full ${backendAvailable ? 'bg-green-400' : 'bg-red-400'}`}></div>
-              <span className="text-slate-300">
-                {backendAvailable ? 'Backend Connected' : 'Backend Offline'}
-              </span>
-            </div>
 
-            {/* Network Activity Tracker Toggle */}
-            <button
-              onClick={() => setShowNetworkActivityTracker(!showNetworkActivityTracker)}
-              className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                showNetworkActivityTracker
-                  ? 'bg-cyan-600 text-white hover:bg-cyan-700'
-                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-              }`}
-            >
-              {showNetworkActivityTracker ? 'Hide Tracker' : 'Show Tracker'}
-            </button>
-
-            {/* Clear Network Data */}
-            {networkData && (
-              <button
-                onClick={() => {
-                  setNetworkData(null);
-                  setShowNetworkActivityTracker(false);
-                }}
-                className="px-3 py-2 rounded-md text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
-              >
-                Clear Data
-              </button>
-            )}
-          </div>
         </div>
-      </div>
-
-      {/* Instructions */}
-      <div className="absolute bottom-6 left-6 z-50 bg-slate-900/95 backdrop-blur-md rounded-lg p-4 border border-cyan-500/30 max-w-md">
-        <h3 className="text-cyan-300 font-bold mb-2">Instructions</h3>
-        <ul className="text-sm text-slate-300 space-y-1">
-          <li>• <span className="text-yellow-400">Hover</span> over countries or cities to see real-time network data</li>
-          <li>• <span className="text-cyan-400">Click</span> on a country to view detailed network visualization</li>
-          <li>• <span className="text-green-400">Capital cities</span> are marked in yellow and pulse</li>
-          <li>• <span className="text-orange-400">Major cities</span> are marked in orange</li>
-        </ul>
-      </div>
-    </div>
+      )}
+    </>
   );
 }
 
