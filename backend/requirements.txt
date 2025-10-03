@@ -2,4 +2,9 @@ fastapi
 uvicorn[standard]
 pydantic
 python-multipart
+langgraph
+langchain
+langchain-openai
+langchain-community
+python-dotenv
 
