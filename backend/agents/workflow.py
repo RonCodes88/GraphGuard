@@ -490,15 +490,276 @@ Perform threat detection analysis and return a comprehensive JSON report.""")
         return state
     
     async def _investigator_node(self, state: AgentState) -> AgentState:
-        """Investigator agent node - placeholder for now"""
-        # TODO: Implement investigator logic
+        """
+        Investigator agent node - LLM-powered deep analysis using GPT-4o
+        
+        Responsibilities:
+        1. Perform deep analysis on flagged network activity from Detector
+        2. Inspect suspicious nodes and edges identified by Detector
+        3. Determine attack type (DDoS, port scan, botnet burst, etc.)
+        4. Provide detailed reports for mitigation and monitoring agents
+        5. Communicate with Detector agent findings
+        """
+        input_data = state["input_data"]
+        context = state.get("context", {})
+        orchestrator_analysis = context.get("orchestrator_analysis", {})
+        
+        # Get Detector's findings
+        detector_decision = state.get("detector_decision")
+        detector_metadata = detector_decision.metadata if detector_decision else {}
+        
+        # Initialize GPT-4o (most capable model for deep analysis)
+        llm = ChatOpenAI(
+            model="gpt-4o",
+            temperature=0.1,  # Very low temperature for analytical precision
+            api_key=config.openai_api_key
+        )
+        
+        # Create investigation prompt
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", """You are an elite AI-powered network security investigator specialized in deep forensic analysis of cyber threats.
+
+Your role:
+- Perform comprehensive forensic analysis on threats detected by the Detector agent
+- Inspect suspicious nodes and edges in detail
+- Determine precise attack types and methodologies
+- Correlate multiple threat indicators into attack campaigns
+- Provide detailed technical reports for security teams
+- Assess attack sophistication and likely threat actor profiles
+
+You will receive:
+1. Orchestrator's initial threat assessment
+2. Detector's threat findings (threats, heavy hitters, anomalies, flagged IPs)
+3. Full network node and edge data
+4. Context from previous agent decisions
+
+You must generate a JSON response with:
+{{
+  "investigations": [
+    {{
+      "investigation_id": "unique_id",
+      "related_threats": ["threat_id1", "threat_id2"],
+      "attack_type": "DDoS" | "Port Scan" | "Botnet" | "APT Campaign" | "Data Exfiltration" | "Ransomware" | "Zero-Day Exploit" | "Brute Force" | "SQL Injection" | "DNS Tunneling" | "Other",
+      "attack_subtype": "Specific variant or technique",
+      "sophistication_level": "low" | "medium" | "high" | "advanced_persistent",
+      "confidence": 0.0-1.0,
+      "severity": "low" | "medium" | "high" | "critical",
+      "affected_entities": {{
+        "nodes": ["node_id1", "node_id2"],
+        "edges": ["edge_id1"],
+        "ips": ["ip1", "ip2"]
+      }},
+      "attack_timeline": [
+        {{
+          "stage": "reconnaissance" | "initial_access" | "execution" | "persistence" | "exfiltration" | "impact",
+          "description": "What happened",
+          "evidence": ["evidence1", "evidence2"]
+        }}
+      ],
+      "technical_details": {{
+        "attack_vector": "Description of how the attack works",
+        "indicators_of_compromise": ["ioc1", "ioc2"],
+        "ttps": ["MITRE ATT&CK technique IDs or descriptions"],
+        "payload_analysis": "If applicable"
+      }},
+      "threat_actor_profile": {{
+        "likely_motivation": "financial" | "espionage" | "disruption" | "activism" | "unknown",
+        "skill_level": "script_kiddie" | "intermediate" | "advanced" | "nation_state",
+        "attribution_confidence": 0.0-1.0
+      }},
+      "impact_assessment": {{
+        "affected_systems": int,
+        "data_at_risk": "None" | "Low" | "Medium" | "High" | "Critical",
+        "business_impact": "Description",
+        "estimated_scope": "Localized" | "Network-wide" | "Multi-network"
+      }},
+      "evidence_chain": [
+        {{
+          "evidence_type": "traffic_pattern" | "node_behavior" | "connection_anomaly" | "payload_signature",
+          "description": "Detailed evidence",
+          "confidence": 0.0-1.0
+        }}
+      ],
+      "correlation_analysis": "How this relates to other threats or campaigns",
+      "recommendations": [
+        "Specific action item 1",
+        "Specific action item 2"
+      ]
+    }}
+  ],
+  "attack_campaigns": [
+    {{
+      "campaign_id": "unique_id",
+      "campaign_name": "Descriptive name",
+      "related_investigations": ["inv_id1", "inv_id2"],
+      "coordinated": bool,
+      "description": "Campaign overview",
+      "timeline": "When it started/ongoing"
+    }}
+  ],
+  "node_forensics": [
+    {{
+      "node_id": "node_id",
+      "ip": "x.x.x.x",
+      "role_in_attack": "attacker" | "victim" | "relay" | "command_control" | "compromised",
+      "behavioral_analysis": "Detailed behavior description",
+      "risk_score": 0.0-1.0,
+      "recommended_action": "isolate" | "monitor" | "block" | "investigate_further"
+    }}
+  ],
+  "edge_forensics": [
+    {{
+      "edge_id": "edge_id",
+      "source_ip": "x.x.x.x",
+      "target_ip": "x.x.x.x",
+      "connection_purpose": "Analysis of connection intent",
+      "anomaly_indicators": ["indicator1", "indicator2"],
+      "threat_level": "low" | "medium" | "high" | "critical"
+    }}
+  ],
+  "overall_assessment": {{
+    "total_investigations": int,
+    "critical_investigations": int,
+    "coordinated_attack": bool,
+    "attack_in_progress": bool,
+    "recommended_priority": "low" | "medium" | "high" | "critical",
+    "requires_immediate_action": bool
+  }},
+  "executive_summary": "Plain-English summary for security leadership",
+  "technical_summary": "Detailed technical summary for SOC analysts"
+}}
+
+Investigation guidelines:
+- Cross-reference Detector findings with network data for validation
+- Look for attack patterns and MITRE ATT&CK techniques
+- Identify attack stages (kill chain analysis)
+- Correlate multiple indicators into campaigns
+- Provide evidence-based conclusions
+- Consider false positive possibilities
+- Recommend specific, actionable next steps
+- Use industry-standard terminology (MITRE, NIST, etc.)"""),
+            ("human", """Perform deep forensic investigation on the detected threats:
+
+ORCHESTRATOR ANALYSIS:
+{orchestrator_analysis}
+
+DETECTOR FINDINGS:
+{detector_findings}
+
+NETWORK NODES:
+{nodes}
+
+NETWORK EDGES:
+{edges}
+
+Conduct comprehensive investigation and return a detailed JSON forensic report.""")
+        ])
+        
+        # Invoke LLM
+        try:
+            chain = prompt | llm
+            response = await chain.ainvoke({
+                "orchestrator_analysis": json.dumps(orchestrator_analysis, indent=2),
+                "detector_findings": json.dumps({
+                    "decision": detector_decision.decision if detector_decision else "no_detection",
+                    "confidence": detector_decision.confidence if detector_decision else 0,
+                    "reasoning": detector_decision.reasoning if detector_decision else "",
+                    "threats_detected": detector_metadata.get("threats_detected", []),
+                    "heavy_hitters": detector_metadata.get("heavy_hitters", []),
+                    "graph_anomalies": detector_metadata.get("graph_anomalies", []),
+                    "flagged_ips": detector_metadata.get("flagged_ips", []),
+                    "overall_assessment": detector_metadata.get("overall_assessment", {})
+                }, indent=2),
+                "nodes": json.dumps(input_data.get("nodes", []), indent=2),
+                "edges": json.dumps(input_data.get("edges", []), indent=2)
+            })
+            
+            # Parse LLM response
+            llm_output = response.content
+            
+            # Extract JSON from response (handle markdown code blocks)
+            if "```json" in llm_output:
+                llm_output = llm_output.split("```json")[1].split("```")[0].strip()
+            elif "```" in llm_output:
+                llm_output = llm_output.split("```")[1].split("```")[0].strip()
+            
+            investigator_data = json.loads(llm_output)
+            
+            # Extract key fields
+            investigations = investigator_data.get("investigations", [])
+            attack_campaigns = investigator_data.get("attack_campaigns", [])
+            node_forensics = investigator_data.get("node_forensics", [])
+            edge_forensics = investigator_data.get("edge_forensics", [])
+            overall_assessment = investigator_data.get("overall_assessment", {})
+            executive_summary = investigator_data.get("executive_summary", "Investigation complete")
+            technical_summary = investigator_data.get("technical_summary", "Technical analysis complete")
+            
+            # Determine decision based on investigation findings
+            if overall_assessment.get("requires_immediate_action"):
+                decision = "critical_threats_confirmed"
+            elif overall_assessment.get("attack_in_progress"):
+                decision = "active_attack_confirmed"
+            elif overall_assessment.get("coordinated_attack"):
+                decision = "coordinated_campaign_detected"
+            elif overall_assessment.get("total_investigations", 0) > 0:
+                decision = "threats_investigated"
+            else:
+                decision = "no_actionable_threats"
+            
+            # Calculate overall confidence from investigations
+            if investigations:
+                avg_confidence = sum(inv.get("confidence", 0) for inv in investigations) / len(investigations)
+                confidence = round(avg_confidence, 2)
+            else:
+                confidence = 0.9  # High confidence when no threats found
+            
+        except Exception as e:
+            # Fallback if LLM fails
+            print(f"LLM investigation failed: {e}. Using fallback.")
+            investigations = []
+            attack_campaigns = []
+            node_forensics = []
+            edge_forensics = []
+            overall_assessment = {
+                "total_investigations": 0,
+                "critical_investigations": 0,
+                "coordinated_attack": False,
+                "attack_in_progress": False,
+                "recommended_priority": "low",
+                "requires_immediate_action": False
+            }
+            executive_summary = f"Investigator agent encountered an error: {str(e)}"
+            technical_summary = "Investigation failed due to technical error"
+            decision = "investigation_error"
+            confidence = 0.3
+        
+        # Create investigator decision
         state["investigator_decision"] = AgentDecision(
             agent_id="investigator",
-            decision="investigation_complete",
-            confidence=0.9,
-            reasoning="Investigation completed successfully"
+            decision=decision,
+            confidence=confidence,
+            reasoning=executive_summary,
+            metadata={
+                "investigations": investigations,
+                "attack_campaigns": attack_campaigns,
+                "node_forensics": node_forensics,
+                "edge_forensics": edge_forensics,
+                "overall_assessment": overall_assessment,
+                "executive_summary": executive_summary,
+                "technical_summary": technical_summary,
+                "detector_input": {
+                    "threats_count": len(detector_metadata.get("threats_detected", [])),
+                    "flagged_ips_count": len(detector_metadata.get("flagged_ips", []))
+                },
+                "llm_model": "gpt-4o",
+                "llm_powered": True
+            }
         )
+        
+        # Update state
         state["current_step"] = "investigator"
+        state["completed_agents"] = state.get("completed_agents", []) + ["investigator"]
+        
         return state
     
     async def _monitor_node(self, state: AgentState) -> AgentState:
