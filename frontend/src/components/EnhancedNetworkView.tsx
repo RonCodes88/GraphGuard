@@ -66,6 +66,8 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
   const [showActionPanel, setShowActionPanel] = useState(false);
   const [isAnalyzingNode, setIsAnalyzingNode] = useState(false);
   const [fastAnalysisMode, setFastAnalysisMode] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailContent, setEmailContent] = useState({ subject: '', body: '' });
 
   // Incident metadata
   const [incidentMetadata, setIncidentMetadata] = useState<{
@@ -619,36 +621,133 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
     }
   };
 
+  // Send email notification
+  const sendEmailNotification = () => {
+    alert(`✓ Email notification sent successfully!\n\nRecipient: Security Operations Center\nSubject: ${emailContent.subject}`);
+    setShowEmailModal(false);
+    setShowActionPanel(false);
+    setAttackedNodeAnalysis(null);
+  };
+
   // Execute mitigation action
   const executeAction = async (action: string, nodeId: string) => {
     try {
       console.log(`Executing action: ${action} on node: ${nodeId}`);
-      
-      // Here you would typically call your backend to execute the action
-      // For demo purposes, we'll simulate the action
-      
-      const actionResults = {
-        block_ip: "🚫 IP address blocked successfully",
-        throttle_traffic: "⏳ Traffic throttled to 50%",
-        notify_dev: "📧 Development team notified",
-        ignore: "👁️ Monitoring continued, no action taken"
-      };
-      
-      // Update the node status in the network data
-      if (networkData && action !== 'ignore') {
-        const updatedNodes = networkData.nodes.map(n => 
-          n.id === nodeId ? { ...n, status: 'blocked' } : n
-        );
-        setNetworkData({ ...networkData, nodes: updatedNodes });
+
+      // Extract IP address from nodeId (format: "ip:port")
+      const ipAddress = nodeId.split(':')[0];
+
+      // For notify_dev, show email modal instead of calling backend
+      if (action === 'notify_dev') {
+        console.log('Full attackedNodeAnalysis:', JSON.stringify(attackedNodeAnalysis, null, 2));
+        console.log('Interactions array:', attackedNodeAnalysis?.agent_interactions?.interactions);
+
+        const interactions = attackedNodeAnalysis?.agent_interactions?.interactions || [];
+        console.log('Extracted interactions:', interactions);
+
+        const judgeAgent = interactions.find((agent: any) => agent.agent_id === 'judge');
+        console.log('Judge agent:', judgeAgent);
+
+        const attackType = incidentMetadata?.attack_type || 'Unknown Attack';
+        const finalConfidence = attackedNodeAnalysis?.confidence || judgeAgent?.confidence || 0;
+        const severity = finalConfidence >= 0.9 ? 'CRITICAL' :
+                        finalConfidence >= 0.7 ? 'HIGH' :
+                        finalConfidence >= 0.5 ? 'MEDIUM' : 'LOW';
+
+        const subject = `[${severity}] Network Security Alert: ${attackType} Detected`;
+
+        // Extract NetFlow data from the first agent (orchestrator or detector)
+        const orchestratorAgent = interactions.find((agent: any) => agent.agent_id === 'orchestrator');
+        const detectorAgent = interactions.find((agent: any) => agent.agent_id === 'detector');
+        const netflowData = orchestratorAgent?.metadata || detectorAgent?.metadata || {};
+
+        const body = `SECURITY INCIDENT REPORT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EXECUTIVE SUMMARY
+├─ Incident Type: ${attackType}
+├─ Severity Level: ${severity}
+├─ Threat Confidence: ${(finalConfidence * 100).toFixed(1)}%
+├─ Source IP: ${ipAddress || nodeId}
+└─ Timestamp: ${new Date().toISOString()}
+
+JUDGE AGENT ASSESSMENT
+├─ Decision: ${judgeAgent?.decision || attackedNodeAnalysis?.result?.decision || 'Monitoring'}
+├─ Confidence Score: ${(finalConfidence * 100).toFixed(1)}%
+└─ Reasoning: ${judgeAgent?.reasoning || attackedNodeAnalysis?.explanation || 'Automated threat analysis completed'}
+
+THREAT INDICATORS
+${interactions.length > 0 ? interactions
+  .filter((agent: any) => agent && agent.agent_id)
+  .map((agent: any) =>
+    `├─ ${agent.agent_id.toUpperCase()}: ${agent.reasoning?.split('\n')[0] || agent.decision || 'Processing'}`
+  ).join('\n') || '└─ No detailed threat indicators available' : '└─ No detailed threat indicators available'}
+
+NETFLOW ANALYSIS
+├─ Packet Count: ${netflowData.total_packets || netflowData.packet_count || 'Not available'} packets
+├─ Data Volume: ${netflowData.total_bytes || netflowData.data_volume || 'Not available'} bytes
+├─ Flow Duration: ${netflowData.duration || netflowData.flow_duration || 'Not available'}
+├─ Protocol: ${netflowData.protocol || 'Multiple'}
+└─ Source Port: ${netflowData.src_port || netflowData.ports || 'Multiple'}
+
+RECOMMENDED ACTIONS
+${(judgeAgent?.decision || attackedNodeAnalysis?.result?.decision) === 'block_attack' ?
+  '├─ [IMMEDIATE] Block source IP address via iptables\n├─ [IMMEDIATE] Isolate affected network segment\n├─ Monitor for lateral movement attempts\n└─ Review firewall rules and update ACLs' :
+  '├─ Continue monitoring network traffic\n├─ Enable enhanced logging for source IP\n├─ Review historical patterns\n└─ Update threat intelligence feeds'
+}
+
+TECHNICAL DETAILS
+├─ Analysis Duration: ${interactions.reduce((sum: number, a: any) => sum + (a.processing_time_ms || 0), 0).toFixed(0)}ms
+├─ Agents Consulted: ${interactions.length}
+└─ Detection Method: Multi-agent AI analysis with conflict resolution
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This is an automated security alert generated by the A10Hacks AI Agent System.
+For urgent matters, contact the Security Operations Center (SOC) immediately.`;
+
+        setEmailContent({ subject, body });
+        setShowEmailModal(true);
+        return;
       }
-      
-      alert(actionResults[action as keyof typeof actionResults]);
+
+      // For other actions, call backend mitigation API
+      const response = await fetch('http://localhost:8000/api/mitigation/execute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: action,
+          ip_address: ipAddress,
+          node_id: nodeId,
+          analysis_data: attackedNodeAnalysis || {}
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        // Update the node status in the network data
+        if (networkData && action !== 'ignore') {
+          const updatedNodes = networkData.nodes.map(n =>
+            n.id === nodeId ? { ...n, status: 'blocked' } : n
+          );
+          setNetworkData({ ...networkData, nodes: updatedNodes });
+        }
+
+        // Show success message
+        alert(`✓ ${result.message}\n\n${result.details.command || ''}`);
+      } else {
+        alert(`✗ Action failed: ${result.message}`);
+      }
+
       setShowActionPanel(false);
       setAttackedNodeAnalysis(null);
-      
+
     } catch (error) {
       console.error('Action execution failed:', error);
-      alert('Action execution failed');
+      alert(`Failed to execute action: ${error}`);
     }
   };
 
@@ -1517,6 +1616,57 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
           </div>
         </div>
       </div>
+
+      {/* Email Notification Modal */}
+      {showEmailModal && (
+        <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-[60]">
+          <div className="bg-black border border-slate-700 rounded-lg p-6 max-w-4xl w-full mx-8 max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex justify-between items-center mb-4 pb-4 border-b border-slate-800">
+              <h2 className="text-xl font-semibold text-white">Email Notification Preview</h2>
+              <button
+                onClick={() => setShowEmailModal(false)}
+                className="text-slate-400 hover:text-white transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4 flex-1 overflow-y-auto">
+              {/* Subject Line */}
+              <div className="bg-slate-900/50 border border-slate-800 rounded p-3">
+                <label className="text-xs text-slate-400 uppercase tracking-wider mb-1 block">Subject</label>
+                <div className="text-white font-medium">{emailContent.subject}</div>
+              </div>
+
+              {/* Email Body */}
+              <div className="bg-slate-900/50 border border-slate-800 rounded p-4">
+                <label className="text-xs text-slate-400 uppercase tracking-wider mb-2 block">Message</label>
+                <pre className="text-sm text-slate-200 whitespace-pre-wrap font-mono leading-relaxed">
+                  {emailContent.body}
+                </pre>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 mt-6 pt-4 border-t border-slate-800">
+              <button
+                onClick={sendEmailNotification}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded font-medium transition-colors"
+              >
+                Send Email
+              </button>
+              <button
+                onClick={() => setShowEmailModal(false)}
+                className="px-6 py-3 border border-slate-700 text-slate-300 hover:text-white hover:border-slate-600 rounded font-medium transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Attacked Node Analysis Modal */}
       {showActionPanel && (
