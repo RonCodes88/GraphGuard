@@ -99,6 +99,9 @@ export default function Earth({ onCountryViewChange }: EarthProps) {
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
+    controls.enablePan = false; // Disable panning to focus on rotation
+    controls.minDistance = 3;
+    controls.maxDistance = 8;
 
             // Create sphere outline with more visible wireframe
             const geometry = new THREE.SphereGeometry(2, 32, 32);
@@ -129,6 +132,13 @@ export default function Earth({ onCountryViewChange }: EarthProps) {
     raycaster.params.Line2 = { threshold: 0.1 };
     const mouse = new THREE.Vector2();
     let hoveredObject: any = null;
+
+    // Drag vs Click detection variables
+    let isDragging = false;
+    let mouseDownPosition = { x: 0, y: 0 };
+    let mouseDownTime = 0;
+    const DRAG_THRESHOLD = 5; // pixels
+    const CLICK_TIME_THRESHOLD = 300; // milliseconds
 
     // Load GeoJSON data with country names
     let countries: THREE.Object3D;
@@ -335,40 +345,82 @@ export default function Earth({ onCountryViewChange }: EarthProps) {
       }
     }
 
-    // Click handler for country selection
-    function handleClick(event: MouseEvent) {
-      const panelWidth = 384;
-      const viewportWidth = window.innerWidth - panelWidth;
-      mouse.x = (event.clientX / viewportWidth) * 2 - 1;
-      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    // Mouse down handler - start tracking potential drag
+    function handleMouseDown(event: MouseEvent) {
+      mouseDownPosition = { x: event.clientX, y: event.clientY };
+      mouseDownTime = Date.now();
+      isDragging = false;
+    }
 
-      raycaster.setFromCamera(mouse, camera);
-
-      if (countries) {
-        const intersects = raycaster.intersectObjects(countries.children, true);
+    // Mouse move handler during drag - detect if dragging
+    function handleMouseMoveDrag(event: MouseEvent) {
+      if (mouseDownTime > 0) {
+        const deltaX = Math.abs(event.clientX - mouseDownPosition.x);
+        const deltaY = Math.abs(event.clientY - mouseDownPosition.y);
         
-        if (intersects.length > 0) {
-          const object = intersects[0].object;
-          if (object.userData.isHoverable) {
-            const featureData = object.userData.featureData || {};
-            const countryName = featureData.name || featureData.ADMIN || featureData.NAME;
-            
-            if (countryName) {
-              setSelectedCountry(countryName);
-            }
-          }
+        if (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD) {
+          isDragging = true;
         }
       }
     }
 
+    // Mouse up handler - handle click if not dragging
+    function handleMouseUp(event: MouseEvent) {
+      const clickDuration = Date.now() - mouseDownTime;
+      const deltaX = Math.abs(event.clientX - mouseDownPosition.x);
+      const deltaY = Math.abs(event.clientY - mouseDownPosition.y);
+      
+      // Only treat as click if:
+      // 1. Mouse didn't move much (not a drag)
+      // 2. Click was quick (not a long press)
+      // 3. Not already detected as dragging
+      if (!isDragging && 
+          deltaX <= DRAG_THRESHOLD && 
+          deltaY <= DRAG_THRESHOLD && 
+          clickDuration <= CLICK_TIME_THRESHOLD) {
+        
+        // This is a genuine click - select country
+        const panelWidth = 384;
+        const viewportWidth = window.innerWidth - panelWidth;
+        mouse.x = (event.clientX / viewportWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, camera);
+
+        if (countries) {
+          const intersects = raycaster.intersectObjects(countries.children, true);
+          
+          if (intersects.length > 0) {
+            const object = intersects[0].object;
+            if (object.userData.isHoverable) {
+              const featureData = object.userData.featureData || {};
+              const countryName = featureData.name || featureData.ADMIN || featureData.NAME;
+              
+              if (countryName) {
+                setSelectedCountry(countryName);
+              }
+            }
+          }
+        }
+      }
+      
+      // Reset drag tracking
+      mouseDownTime = 0;
+      isDragging = false;
+    }
+
     window.addEventListener("mousemove", handleMouseMove, false);
-    window.addEventListener("click", handleClick, false);
+    window.addEventListener("mousedown", handleMouseDown, false);
+    window.addEventListener("mousemove", handleMouseMoveDrag, false);
+    window.addEventListener("mouseup", handleMouseUp, false);
 
     // Cleanup
     return () => {
       window.removeEventListener("resize", handleWindowResize);
       window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("click", handleClick);
+      window.removeEventListener("mousedown", handleMouseDown);
+      window.removeEventListener("mousemove", handleMouseMoveDrag);
+      window.removeEventListener("mouseup", handleMouseUp);
       cancelAnimationFrame(animationId);
       if (containerRef.current && renderer.domElement.parentElement) {
         containerRef.current.removeChild(renderer.domElement);

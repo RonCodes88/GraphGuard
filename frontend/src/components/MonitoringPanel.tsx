@@ -343,7 +343,7 @@ export default function MonitoringPanel() {
       </div>
 
       {/* Scrollable Content */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-track-gray-900 scrollbar-thumb-gray-700 hover:scrollbar-thumb-gray-600">
+      <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-track-gray-800 scrollbar-thumb-gray-600 hover:scrollbar-thumb-gray-500">
         
         {/* Country Search Bar */}
         <div className="p-3 border-b border-gray-800 bg-gray-950/30">

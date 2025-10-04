@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Earth from "@/components/Earth";
-import NetworkViewTest from "@/components/NetworkViewTest";
 import MonitoringPanel from "@/components/MonitoringPanel";
 
 
