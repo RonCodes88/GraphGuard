@@ -27,12 +27,16 @@ class CICDataClient {
    */
   async getEvents(
     window: TimeWindow = '15m',
-    severity?: SeverityLevel
+    severity?: SeverityLevel,
+    limit: number = 10,
+    offset: number = 0
   ): Promise<EventsResponse> {
     const params = new URLSearchParams({ window });
     if (severity) {
       params.append('severity', severity);
     }
+    params.append('limit', limit.toString());
+    params.append('offset', offset.toString());
 
     const response = await fetch(`${API_BASE_URL}/events?${params}`);
     if (!response.ok) {
@@ -40,6 +44,24 @@ class CICDataClient {
     }
 
     return response.json();
+  }
+
+  /**
+   * Stream a single event with real-time timestamp
+   */
+  async streamSingleEvent(severity?: SeverityLevel): Promise<CICEvent | null> {
+    const params = new URLSearchParams();
+    if (severity) params.append('severity', severity);
+
+    const response = await fetch(`${API_BASE_URL}/stream-single-event?${params}`, {
+      method: 'POST'
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to stream single event: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.event || null;
   }
 
   /**
@@ -164,12 +186,71 @@ export const cicDataClient = new CICDataClient();
 
 // Utility functions
 export const formatTime = (timestamp: string): string => {
-  return new Date(timestamp).toLocaleTimeString('en-US', {
-    hour12: false,
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  });
+  const now = new Date();
+  const eventTime = new Date(timestamp);
+  const diffMs = now.getTime() - eventTime.getTime();
+  
+  // Handle edge cases where timestamp might be in the future or invalid
+  if (isNaN(eventTime.getTime()) || diffMs < 0) {
+    return "Just now";
+  }
+  
+  // Convert to seconds, minutes, hours
+  const diffSeconds = Math.floor(diffMs / 1000);
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  const diffHours = Math.floor(diffMinutes / 60);
+  const diffDays = Math.floor(diffHours / 24);
+  
+  if (diffSeconds < 10) {
+    return "Just now";
+  } else if (diffSeconds < 60) {
+    return `${diffSeconds}s ago`;
+  } else if (diffMinutes < 60) {
+    return `${diffMinutes}m ago`;
+  } else if (diffHours < 24) {
+    return `${diffHours}h ago`;
+  } else if (diffDays < 7) {
+    return `${diffDays}d ago`;
+  } else {
+    // For older events, show actual date and time
+    return eventTime.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  }
+};
+
+/**
+ * Format time since event was posted to the monitor
+ * Shows time elapsed since postedAt timestamp
+ */
+export const formatTimeSincePosted = (postedAt: string | undefined): string => {
+  if (!postedAt) return "Just now";
+  
+  const now = new Date();
+  const postedTime = new Date(postedAt);
+  const diffMs = now.getTime() - postedTime.getTime();
+  
+  // Handle edge cases
+  if (isNaN(postedTime.getTime()) || diffMs < 0) {
+    return "Just now";
+  }
+  
+  const diffSeconds = Math.floor(diffMs / 1000);
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  const diffHours = Math.floor(diffMinutes / 60);
+  
+  if (diffSeconds < 10) {
+    return "Just now";
+  } else if (diffSeconds < 60) {
+    return `${diffSeconds}s`;
+  } else if (diffMinutes < 60) {
+    return `${diffMinutes}m`;
+  } else {
+    return `${diffHours}h`;
+  }
 };
 
 export const formatDateTime = (timestamp: string): string => {

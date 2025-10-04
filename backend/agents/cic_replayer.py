@@ -75,7 +75,7 @@ class CICReplayer:
         ]
         
         events = []
-        base_time = datetime.now() - timedelta(hours=2)
+        base_time = datetime.now() - timedelta(minutes=15)  # Start 15 minutes ago instead of 2 hours
         
         for i in range(200):
             country = random.choice(countries)
@@ -119,7 +119,7 @@ class CICReplayer:
         ]
         
         events = []
-        base_time = datetime.now() - timedelta(hours=2)
+        base_time = datetime.now() - timedelta(minutes=15)  # Start 15 minutes ago instead of 2 hours
         
         # Generate events with different severity levels
         severity_weights = {"OK": 0.6, "WARN": 0.25, "ALERT": 0.15}
@@ -193,7 +193,7 @@ class CICReplayer:
         ]
         
         events = []
-        base_time = datetime.now() - timedelta(hours=2)
+        base_time = datetime.now() - timedelta(minutes=15)  # Start 15 minutes ago instead of 2 hours
         
         # Generate mostly attack events
         severity_weights = {"OK": 0.1, "WARN": 0.2, "ALERT": 0.7}
@@ -277,34 +277,163 @@ class CICReplayer:
                 self.country_history[event.countryCode] = []
             self.country_history[event.countryCode].append(event)
     
-    def get_events(self, window: str = "15m", severity: Optional[str] = None) -> List[CICEvent]:
-        """Get events within time window"""
+    def _generate_fresh_events(self, count: int = 5) -> List[CICEvent]:
+        """Generate fresh events with current timestamps"""
+        countries = [
+            {"name": "United States", "code": "US"},
+            {"name": "China", "code": "CN"},
+            {"name": "Russia", "code": "RU"},
+            {"name": "Germany", "code": "DE"},
+            {"name": "United Kingdom", "code": "GB"},
+            {"name": "France", "code": "FR"},
+            {"name": "Japan", "code": "JP"},
+            {"name": "South Korea", "code": "KR"},
+            {"name": "India", "code": "IN"},
+            {"name": "Brazil", "code": "BR"},
+            {"name": "Canada", "code": "CA"},
+            {"name": "Australia", "code": "AU"},
+            {"name": "Netherlands", "code": "NL"},
+            {"name": "Singapore", "code": "SG"},
+            {"name": "Israel", "code": "IL"},
+            {"name": "Ukraine", "code": "UA"}
+        ]
+        
+        fresh_events = []
         now = datetime.now()
         
-        # Parse window
-        if window.endswith('m'):
-            minutes = int(window[:-1])
-            cutoff = now - timedelta(minutes=minutes)
-        elif window.endswith('h'):
-            hours = int(window[:-1])
-            cutoff = now - timedelta(hours=hours)
-        elif window.endswith('d'):
-            days = int(window[:-1])
-            cutoff = now - timedelta(days=days)
-        else:
-            cutoff = now - timedelta(minutes=15)  # default 15 minutes
+        # Generate events with timestamps from the last few minutes
+        for i in range(count):
+            country = random.choice(countries)
+            # Random timestamp within the last 2 minutes for more dynamic updates
+            minutes_ago = random.randint(0, 2)
+            seconds_ago = random.randint(0, 59)
+            timestamp = now - timedelta(minutes=minutes_ago, seconds=seconds_ago)
+            
+            # Ensure timestamp is properly formatted with timezone
+            timestamp_str = timestamp.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+            
+            # Weighted severity based on scenario
+            if self.current_scenario == "benign":
+                severity_weights = {"OK": 0.8, "WARN": 0.15, "ALERT": 0.05}
+            elif self.current_scenario == "ddos":
+                severity_weights = {"OK": 0.1, "WARN": 0.2, "ALERT": 0.7}
+            else:  # mixed
+                severity_weights = {"OK": 0.5, "WARN": 0.3, "ALERT": 0.2}
+            
+            severity = random.choices(
+                list(severity_weights.keys()),
+                weights=list(severity_weights.values())
+            )[0]
+            
+            # Generate appropriate reason based on severity
+            if severity == "OK":
+                reasons = [
+                    "Normal traffic pattern detected",
+                    "Regular network activity",
+                    "Standard communication flow",
+                    "Baseline traffic observed"
+                ]
+                changes = [
+                    "No significant changes",
+                    "Traffic within normal parameters",
+                    "Standard operational status"
+                ]
+                next_steps = [
+                    "Continue monitoring",
+                    "Maintain current security posture",
+                    "No action required"
+                ]
+            elif severity == "WARN":
+                reasons = [
+                    "Unusual traffic pattern detected",
+                    "Traffic volume spike observed",
+                    "Suspicious network behavior",
+                    "Anomalous connection pattern"
+                ]
+                changes = [
+                    "Traffic volume increased by 150%",
+                    "Unusual connection frequency",
+                    "Network behavior deviation detected"
+                ]
+                next_steps = [
+                    "Investigate further",
+                    "Monitor closely",
+                    "Review security logs"
+                ]
+            else:  # ALERT
+                reasons = [
+                    "Potential cyber attack detected",
+                    "Critical security breach detected",
+                    "APT infiltration attempt",
+                    "Malicious activity identified"
+                ]
+                changes = [
+                    "Critical security event",
+                    "Unauthorized access attempt",
+                    "Suspicious data exfiltration"
+                ]
+                next_steps = [
+                    "Immediate response required",
+                    "Activate incident response",
+                    "Block suspicious IPs"
+                ]
+            
+            event = CICEvent(
+                ts=timestamp_str,
+                incident_id=f"INC-{self.current_scenario.upper()}-{random.randint(1000, 9999)}",
+                severity=severity,
+                country=country["name"],
+                countryCode=country["code"],
+                ip=f"{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}",
+                reason=random.choice(reasons),
+                change=random.choice(changes),
+                status="monitoring" if severity == "OK" else "investigating",
+                next_step=random.choice(next_steps)
+            )
+            fresh_events.append(event)
         
-        # Filter events
-        filtered_events = []
-        for event in self.events:
-            event_time = datetime.fromisoformat(event.ts.replace('Z', '+00:00'))
-            if event_time >= cutoff:
-                if severity is None or event.severity == severity:
-                    filtered_events.append(event)
+        return fresh_events
+
+    def get_events(self, window: str = "15m", severity: Optional[str] = None, limit: int = 10, offset: int = 0) -> List[CICEvent]:
+        """Get events with pagination"""
+        # Filter events by severity if specified
+        filtered_events = self.events.copy()
+        if severity:
+            filtered_events = [e for e in filtered_events if e.severity == severity]
         
         # Sort by timestamp (newest first)
         filtered_events.sort(key=lambda x: x.ts, reverse=True)
-        return filtered_events
+        
+        # Apply pagination
+        paginated_events = filtered_events[offset:offset + limit]
+        
+        return paginated_events
+    
+    async def stream_single_event(self, severity_filter: Optional[str] = None) -> Optional[CICEvent]:
+        """Stream a single event with real-time timestamp"""
+        # Generate a fresh event instead of using event_streamer
+        fresh_events = self._generate_fresh_events(1)
+        
+        if not fresh_events:
+            return None
+        
+        # Filter by severity if specified
+        event = fresh_events[0]
+        if severity_filter and event.severity != severity_filter:
+            # Try to generate an event with the requested severity
+            for _ in range(10):  # Try up to 10 times
+                fresh_events = self._generate_fresh_events(1)
+                if fresh_events[0].severity == severity_filter:
+                    event = fresh_events[0]
+                    break
+        
+        return event
+    
+    def get_total_events_count(self, severity_filter: Optional[str] = None) -> int:
+        """Get total count of events"""
+        if severity_filter:
+            return len([e for e in self.events if e.severity == severity_filter])
+        return len(self.events)
     
     def get_stats(self, window: str = "15m") -> CICStats:
         """Get statistics for time window"""
@@ -385,15 +514,61 @@ app = FastAPI(
     version="1.0.0"
 )
 
+@app.get("/")
+async def root():
+    """Root endpoint for CIC replayer"""
+    return {
+        "message": "CIC-DDoS2019 Event Replayer",
+        "endpoints": {
+            "events": "/events",
+            "stream_single_event": "/stream-single-event",
+            "stats": "/stats",
+            "stream": "/stream",
+            "scenario": "/scenario"
+        }
+    }
+
 @app.get("/events")
 async def get_events(
     window: str = Query("15m", description="Time window: 5m, 15m, 60m, etc."),
+    severity: Optional[str] = Query(None, description="Filter by severity: OK, WARN, ALERT"),
+    limit: int = Query(10, description="Number of events to return"),
+    offset: int = Query(0, description="Number of events to skip")
+):
+    """Get recent events with pagination"""
+    try:
+        events = replayer.get_events(window, severity, limit, offset)
+        total_count = replayer.get_total_events_count(severity)
+        return {
+            "events": events, 
+            "count": len(events), 
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset,
+            "has_more": offset + len(events) < total_count,
+            "window": window
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/stream-single-event")
+async def stream_single_event(
     severity: Optional[str] = Query(None, description="Filter by severity: OK, WARN, ALERT")
 ):
-    """Get recent events within time window"""
+    """Stream a single event with real-time timestamp"""
     try:
-        events = replayer.get_events(window, severity)
-        return {"events": events, "count": len(events), "window": window}
+        event = await replayer.stream_single_event(severity)
+        if event:
+            return {
+                "event": event,
+                "streamed_at": datetime.now().isoformat() + "Z"
+            }
+        else:
+            return {
+                "event": None,
+                "message": "No events available to stream",
+                "streamed_at": datetime.now().isoformat() + "Z"
+            }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

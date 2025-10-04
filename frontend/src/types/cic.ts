@@ -17,6 +17,7 @@ export interface CICEvent {
   change: string;
   status: string;
   next_step: string;
+  postedAt?: string; // Timestamp when event was posted to monitor (client-side)
 }
 
 export interface CICStats {
@@ -42,6 +43,8 @@ export interface EventsResponse {
   events: CICEvent[];
   count: number;
   window: string;
+  total_count?: number;
+  has_more?: boolean;
 }
 
 export interface ScenarioInfo {

@@ -22,12 +22,15 @@ import cicDataClient, {
   groupEventsByCountry,
   filterEventsBySeverity,
   filterEventsByCountry,
-  isEventInWindow
+  isEventInWindow,
+  parseTimeWindow
 } from '@/services/cicDataClient';
 
 interface CICStoreState {
   // Data
   events: CICEvent[];
+  displayedEvents: CICEvent[]; // Events currently shown in UI (progressively loaded)
+  eventQueue: CICEvent[]; // Queue of events waiting to be displayed
   stats: CICStats | null;
   activeIncidents: ActiveIncident[];
   countryHistory: CountryHistory[];
@@ -46,6 +49,12 @@ interface CICStoreState {
   filteredEvents: CICEvent[];
   recentEvents: CICEvent[];
   
+  // Pagination state
+  eventsOffset: number;
+  eventsLimit: number;
+  totalEventsCount: number;
+  hasMoreEvents: boolean;
+  
   // Actions
   setFilters: (filters: Partial<EventFilters>) => void;
   setScenario: (scenario: ScenarioType) => Promise<void>;
@@ -56,6 +65,22 @@ interface CICStoreState {
   refreshData: () => Promise<void>;
   addEvent: (event: CICEvent) => void;
   clearError: () => void;
+  
+  // Pagination actions
+  loadMoreEvents: () => Promise<void>;
+  resetPagination: () => void;
+  streamSingleEvent: () => Promise<void>;
+  
+  // Progressive loading actions
+  addEventToQueue: (event: CICEvent) => void;
+  displayNextEvent: () => void;
+  clearQueue: () => void;
+  
+  // Pagination for displayed events
+  currentPage: number;
+  eventsPerPage: number;
+  setCurrentPage: (page: number) => void;
+  getPaginatedEvents: () => CICEvent[];
   
   // Internal actions
   _updateComputedValues: () => void;
@@ -69,6 +94,8 @@ export const useCICStore = create<CICStoreState>()(
   subscribeWithSelector((set, get) => ({
     // Initial state
     events: [],
+    displayedEvents: [],
+    eventQueue: [],
     stats: null,
     activeIncidents: [],
     countryHistory: [],
@@ -82,6 +109,16 @@ export const useCICStore = create<CICStoreState>()(
     error: null,
     filteredEvents: [],
     recentEvents: [],
+    
+    // Pagination state
+    eventsOffset: 0,
+    eventsLimit: 10,
+    totalEventsCount: 0,
+    hasMoreEvents: false,
+    
+    // Pagination for displayed events
+    currentPage: 1,
+    eventsPerPage: 10,
 
     // Actions
     setFilters: (newFilters) => {
@@ -89,6 +126,7 @@ export const useCICStore = create<CICStoreState>()(
         filters: { ...state.filters, ...newFilters }
       }));
       get()._updateComputedValues();
+      get()._updateStats(); // Update stats when filters change
     },
 
     setScenario: async (scenario) => {
@@ -108,13 +146,21 @@ export const useCICStore = create<CICStoreState>()(
       try {
         console.log('CIC Store: Fetching events...');
         set({ isLoading: true, error: null });
-        const { filters } = get();
-        const response = await cicDataClient.getEvents(filters.window as TimeWindow, filters.severity);
+        const { filters, eventsOffset, eventsLimit } = get();
+        
+        const response = await cicDataClient.getEvents(
+          filters.window as TimeWindow, 
+          filters.severity,
+          eventsLimit,
+          eventsOffset
+        );
         
         console.log('CIC Store: Events fetched successfully:', response.events.length, 'events');
         
         set({
-          events: response.events.slice(0, MAX_EVENTS), // Cap events
+          events: response.events,
+          totalEventsCount: response.total_count || 0,
+          hasMoreEvents: response.has_more || false,
           lastUpdate: new Date().toISOString()
         });
         
@@ -189,21 +235,177 @@ export const useCICStore = create<CICStoreState>()(
       set({ error: null });
     },
 
+    // Pagination actions
+    loadMoreEvents: async () => {
+      const { eventsOffset, eventsLimit, filters, hasMoreEvents } = get();
+      
+      if (!hasMoreEvents) return;
+      
+      try {
+        set({ isLoading: true, error: null });
+        
+        const response = await cicDataClient.getEvents(
+          filters.window,
+          filters.severity,
+          eventsLimit,
+          eventsOffset + eventsLimit
+        );
+        
+        const newEvents = response.events || [];
+        const currentEvents = get().events;
+        
+        set({
+          events: [...currentEvents, ...newEvents],
+          eventsOffset: eventsOffset + eventsLimit,
+          totalEventsCount: response.total_count || 0,
+          hasMoreEvents: response.has_more || false,
+          isLoading: false,
+          lastUpdate: new Date().toISOString()
+        });
+        
+        get()._updateComputedValues();
+      } catch (error) {
+        set({ 
+          error: error instanceof Error ? error.message : 'Failed to load more events',
+          isLoading: false 
+        });
+      }
+    },
+
+    resetPagination: () => {
+      set({
+        eventsOffset: 0,
+        eventsLimit: 10,
+        totalEventsCount: 0,
+        hasMoreEvents: false,
+        events: [],
+        filteredEvents: [],
+        recentEvents: []
+      });
+    },
+
+    streamSingleEvent: async () => {
+      const { filters } = get();
+      
+      try {
+        const newEvent = await cicDataClient.streamSingleEvent(filters.severity);
+        if (newEvent) {
+          // Add event to queue instead of displaying immediately
+          get().addEventToQueue(newEvent);
+        }
+      } catch (error) {
+        set({ 
+          error: error instanceof Error ? error.message : 'Failed to stream single event'
+        });
+      }
+    },
+
+    // Progressive loading actions
+    addEventToQueue: (event: CICEvent) => {
+      set((state) => ({
+        eventQueue: [...state.eventQueue, event],
+        events: [event, ...state.events],
+        totalEventsCount: state.totalEventsCount + 1
+      }));
+      
+      // Update stats when new events are added
+      get()._updateStats();
+    },
+
+    displayNextEvent: () => {
+      set((state) => {
+        if (state.eventQueue.length === 0) return state;
+        
+        const [nextEvent, ...remainingQueue] = state.eventQueue;
+        
+        // Add postedAt timestamp when displaying the event
+        const eventWithPostedAt = {
+          ...nextEvent,
+          postedAt: new Date().toISOString()
+        };
+        
+        return {
+          eventQueue: remainingQueue,
+          displayedEvents: [eventWithPostedAt, ...state.displayedEvents].slice(0, MAX_EVENTS)
+        };
+      });
+      
+      get()._updateComputedValues();
+      get()._updateStats(); // Update stats when events are displayed
+    },
+
+    clearQueue: () => {
+      set({ eventQueue: [], displayedEvents: [], events: [] });
+    },
+
+    // Pagination for displayed events
+    setCurrentPage: (page: number) => {
+      set({ currentPage: page });
+    },
+
+    getPaginatedEvents: () => {
+      const { recentEvents, currentPage, eventsPerPage } = get();
+      const startIndex = (currentPage - 1) * eventsPerPage;
+      const endIndex = startIndex + eventsPerPage;
+      return recentEvents.slice(startIndex, endIndex);
+    },
+
     // Internal actions
+    _updateStats: () => {
+      const { displayedEvents, filters } = get();
+      
+      // Calculate stats from displayed events (the ones actually shown in UI)
+      const now = new Date();
+      const windowMs = parseTimeWindow(filters.window as TimeWindow);
+      
+      // Filter events within the current time window based on postedAt timestamp
+      const recentEvents = displayedEvents.filter(event => {
+        const eventTime = event.postedAt ? new Date(event.postedAt) : new Date(event.ts);
+        return (now.getTime() - eventTime.getTime()) <= windowMs;
+      });
+      
+      // Count events by severity
+      const alerts = recentEvents.filter(e => e.severity === 'ALERT').length;
+      const warns = recentEvents.filter(e => e.severity === 'WARN').length;
+      const ok = recentEvents.filter(e => e.severity === 'OK').length;
+      
+      // Get unique countries
+      const countries = new Set(recentEvents.map(e => e.country));
+      
+      const newStats: CICStats = {
+        totalEvents: recentEvents.length,
+        alerts,
+        warns,
+        ok,
+        totalCountries: countries.size,
+        window: filters.window as TimeWindow,
+        lastUpdate: new Date().toISOString()
+      };
+      
+      set({ stats: newStats });
+    },
+
     _updateComputedValues: () => {
-      const { events, filters } = get();
+      const { displayedEvents, filters } = get();
       
       // Filter events by severity
-      let filtered = filterEventsBySeverity(events, filters.severity);
+      let filtered = filterEventsBySeverity(displayedEvents, filters.severity);
       
       // Filter events by country
       filtered = filterEventsByCountry(filtered, filters.country);
       
-      // Filter events by time window
-      filtered = filtered.filter(event => isEventInWindow(event, filters.window as TimeWindow));
+      // Filter events by time window (based on postedAt timestamp)
+      filtered = filtered.filter(event => {
+        if (!event.postedAt) return true; // Include events without postedAt
+        return isEventInWindow({ ...event, ts: event.postedAt }, filters.window as TimeWindow);
+      });
       
-      // Sort by timestamp (newest first)
-      filtered.sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
+      // Sort by postedAt timestamp (newest first)
+      filtered.sort((a, b) => {
+        const aTime = a.postedAt ? new Date(a.postedAt).getTime() : new Date(a.ts).getTime();
+        const bTime = b.postedAt ? new Date(b.postedAt).getTime() : new Date(b.ts).getTime();
+        return bTime - aTime;
+      });
       
       // Get recent events (last 50)
       const recent = filtered.slice(0, 50);
@@ -284,6 +486,8 @@ export const useCICStore = create<CICStoreState>()(
 // Selectors for common use cases
 export const useFilteredEvents = () => useCICStore(state => state.filteredEvents);
 export const useRecentEvents = () => useCICStore(state => state.recentEvents);
+export const useDisplayedEvents = () => useCICStore(state => state.displayedEvents);
+export const useEventQueue = () => useCICStore(state => state.eventQueue);
 export const useActiveIncidents = () => useCICStore(state => state.activeIncidents);
 export const useCountryHistory = () => useCICStore(state => state.countryHistory);
 export const useCICStats = () => useCICStore(state => state.stats);
@@ -303,6 +507,28 @@ export const useStopStreaming = () => useCICStore(state => state.stopStreaming);
 export const useRefreshData = () => useCICStore(state => state.refreshData);
 export const useClearError = () => useCICStore(state => state.clearError);
 
+// Pagination action hooks
+export const useLoadMoreEvents = () => useCICStore(state => state.loadMoreEvents);
+export const useResetPagination = () => useCICStore(state => state.resetPagination);
+export const useStreamSingleEvent = () => useCICStore(state => state.streamSingleEvent);
+
+// Progressive loading action hooks
+export const useAddEventToQueue = () => useCICStore(state => state.addEventToQueue);
+export const useDisplayNextEvent = () => useCICStore(state => state.displayNextEvent);
+export const useClearQueue = () => useCICStore(state => state.clearQueue);
+
+// Pagination hooks for displayed events
+export const useCurrentPage = () => useCICStore(state => state.currentPage);
+export const useEventsPerPage = () => useCICStore(state => state.eventsPerPage);
+export const useSetCurrentPage = () => useCICStore(state => state.setCurrentPage);
+export const useGetPaginatedEvents = () => useCICStore(state => state.getPaginatedEvents);
+
+// Pagination state hooks
+export const useEventsOffset = () => useCICStore(state => state.eventsOffset);
+export const useEventsLimit = () => useCICStore(state => state.eventsLimit);
+export const useTotalEventsCount = () => useCICStore(state => state.totalEventsCount);
+export const useHasMoreEvents = () => useCICStore(state => state.hasMoreEvents);
+
 // Action selectors - use individual hooks instead of combined object
 // This prevents the getServerSnapshot infinite loop issue
 export const useCICActions = () => {
@@ -314,6 +540,9 @@ export const useCICActions = () => {
   const stopStreaming = useStopStreaming();
   const refreshData = useRefreshData();
   const clearError = useClearError();
+  const loadMoreEvents = useLoadMoreEvents();
+  const resetPagination = useResetPagination();
+  const streamSingleEvent = useStreamSingleEvent();
   
   return {
     setFilters,
@@ -323,7 +552,10 @@ export const useCICActions = () => {
     startStreaming,
     stopStreaming,
     refreshData,
-    clearError
+    clearError,
+    loadMoreEvents,
+    resetPagination,
+    streamSingleEvent
   };
 };
 
