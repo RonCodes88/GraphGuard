@@ -66,10 +66,18 @@ class AttackIncidentAggregator:
             victims = [n for n in incident_nodes if n.get("status") == "attacked"]
             attackers = [n for n in incident_nodes if n.get("status") == "suspicious"]
 
-            # Calculate geographic center (average of victim locations)
+            # Calculate geographic center using the primary victim cluster
+            # (to avoid ocean coordinates when victims span multiple continents)
             if victims:
-                avg_lat = sum(v.get("latitude", 0) for v in victims) / len(victims)
-                avg_lon = sum(v.get("longitude", 0) for v in victims) / len(victims)
+                # Group victims by country to find primary target location
+                from collections import Counter
+                victim_countries = [v.get("country", "Unknown") for v in victims]
+                most_common_country = Counter(victim_countries).most_common(1)[0][0]
+
+                # Use average location of victims in the most targeted country
+                primary_victims = [v for v in victims if v.get("country") == most_common_country]
+                avg_lat = sum(v.get("latitude", 0) for v in primary_victims) / len(primary_victims)
+                avg_lon = sum(v.get("longitude", 0) for v in primary_victims) / len(primary_victims)
             else:
                 # Fallback to all nodes
                 avg_lat = sum(n.get("latitude", 0) for n in incident_nodes) / len(incident_nodes)

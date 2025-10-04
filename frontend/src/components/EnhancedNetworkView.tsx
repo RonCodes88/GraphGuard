@@ -5,7 +5,8 @@ import * as d3 from "d3";
 import { networkDataService, NetworkTrafficData, NetworkNode, NetworkEdge } from "@/services/networkDataService";
 
 interface EnhancedNetworkViewProps {
-  country: string;
+  incidentId?: string;
+  country?: string;
   onBack: () => void;
 }
 
@@ -31,7 +32,7 @@ interface D3Edge extends NetworkEdge {
   target: D3Node | string;
 }
 
-export default function EnhancedNetworkView({ country, onBack }: EnhancedNetworkViewProps) {
+export default function EnhancedNetworkView({ incidentId, country, onBack }: EnhancedNetworkViewProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [networkData, setNetworkData] = useState<NetworkTrafficData | null>(null);
@@ -65,11 +66,55 @@ export default function EnhancedNetworkView({ country, onBack }: EnhancedNetwork
   const [isAnalyzingNode, setIsAnalyzingNode] = useState(false);
   const [fastAnalysisMode, setFastAnalysisMode] = useState(false);
 
+  // Incident metadata
+  const [incidentMetadata, setIncidentMetadata] = useState<{
+    attack_type: string;
+    severity: string;
+    affected_countries: string[];
+    victim_count: number;
+    attacker_count: number;
+  } | null>(null);
+
   // Fetch network data
   const fetchNetworkData = async () => {
     try {
       setLoading(true);
-      const data = await networkDataService.getCountryNetworkData(country);
+
+      let data: NetworkTrafficData;
+
+      if (incidentId) {
+        // Fetch incident details from backend
+        const response = await fetch(`http://localhost:8000/api/network/incident/${incidentId}`);
+        const incidentData = await response.json();
+        const incident = incidentData.incident;
+
+        // Transform incident data to NetworkTrafficData format
+        data = {
+          country: incident.affected_countries.join(', '),
+          timestamp: incident.timestamp,
+          nodes: incident.nodes,
+          edges: incident.edges,
+          total_traffic: incident.total_packets,
+          attack_count: incident.edges.filter((e: any) => e.connection_type === 'attack').length,
+          suspicious_count: incident.edges.filter((e: any) => e.connection_type === 'suspicious').length,
+          normal_count: incident.edges.filter((e: any) => e.connection_type === 'normal').length,
+        };
+
+        // Store incident metadata
+        setIncidentMetadata({
+          attack_type: incident.attack_type,
+          severity: incident.severity,
+          affected_countries: incident.affected_countries,
+          victim_count: incident.victim_count,
+          attacker_count: incident.attacker_count,
+        });
+      } else if (country) {
+        // Fetch country data from backend
+        const response = await fetch(`http://localhost:8000/api/network/country/${country}`);
+        data = await response.json();
+      } else {
+        throw new Error("Either incidentId or country must be provided");
+      }
       
       // Validate and sanitize the data
       if (!data || !data.nodes || !data.edges) {
@@ -127,7 +172,7 @@ export default function EnhancedNetworkView({ country, onBack }: EnhancedNetwork
     } catch (error) {
       console.error("Failed to fetch network data:", error);
       try {
-        const demoData = networkDataService.generateDemoNetworkData(country);
+        const demoData = networkDataService.generateDemoNetworkData("Global");
         console.log("Using demo data:", demoData);
         setNetworkData(demoData);
       } catch (demoError) {
@@ -536,6 +581,13 @@ export default function EnhancedNetworkView({ country, onBack }: EnhancedNetwork
     })).filter(edge => edge.source && edge.target);
 
     console.log(`Creating simulation with ${validNodes.length} nodes and ${edgesWithNodes.length} edges`);
+    
+    // Debug edge types
+    const edgeTypes = edgesWithNodes.reduce((acc, edge) => {
+      acc[edge.connection_type] = (acc[edge.connection_type] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    console.log('Edge types:', edgeTypes);
 
     let simulation: d3.Simulation<D3Node, D3Edge> | null = null;
 
@@ -575,40 +627,46 @@ export default function EnhancedNetworkView({ country, onBack }: EnhancedNetwork
     defs.append("marker")
       .attr("id", "arrow-normal")
       .attr("viewBox", "0 -5 10 10")
-      .attr("refX", 8)
+      .attr("refX", 12)
       .attr("refY", 0)
-      .attr("markerWidth", 6)
-      .attr("markerHeight", 6)
+      .attr("markerWidth", 12)
+      .attr("markerHeight", 12)
       .attr("orient", "auto")
       .append("path")
       .attr("d", "M0,-5L10,0L0,5")
-      .attr("fill", "#00ff88");
+      .attr("fill", "#00ff88")
+      .attr("stroke", "#00ff88")
+      .attr("stroke-width", 0.5);
 
     // Attack flow arrow
     defs.append("marker")
       .attr("id", "arrow-attack")
       .attr("viewBox", "0 -5 10 10")
-      .attr("refX", 8)
+      .attr("refX", 12)
       .attr("refY", 0)
-      .attr("markerWidth", 6)
-      .attr("markerHeight", 6)
+      .attr("markerWidth", 12)
+      .attr("markerHeight", 12)
       .attr("orient", "auto")
       .append("path")
       .attr("d", "M0,-5L10,0L0,5")
-      .attr("fill", "#ff0000");
+      .attr("fill", "#ff0000")
+      .attr("stroke", "#ff0000")
+      .attr("stroke-width", 0.5);
 
     // Suspicious flow arrow
     defs.append("marker")
       .attr("id", "arrow-suspicious")
       .attr("viewBox", "0 -5 10 10")
-      .attr("refX", 8)
+      .attr("refX", 12)
       .attr("refY", 0)
-      .attr("markerWidth", 6)
-      .attr("markerHeight", 6)
+      .attr("markerWidth", 12)
+      .attr("markerHeight", 12)
       .attr("orient", "auto")
       .append("path")
       .attr("d", "M0,-5L10,0L0,5")
-      .attr("fill", "#ffaa00");
+      .attr("fill", "#ffaa00")
+      .attr("stroke", "#ffaa00")
+      .attr("stroke-width", 0.5);
 
     // Create edges
     const edges = g.append("g")
@@ -628,11 +686,15 @@ export default function EnhancedNetworkView({ country, onBack }: EnhancedNetwork
       .attr("stroke-opacity", (d) => d.connection_type === "attack" ? 0.9 : 0.6)
       .attr("stroke-dasharray", (d) => d.connection_type === "attack" ? "8,4" : "none")
       .attr("marker-end", (d) => {
-        switch (d.connection_type) {
-          case "attack": return "url(#arrow-attack)";
-          case "suspicious": return "url(#arrow-suspicious)";
-          default: return "url(#arrow-normal)";
-        }
+        const marker = (() => {
+          switch (d.connection_type) {
+            case "attack": return "url(#arrow-attack)";
+            case "suspicious": return "url(#arrow-suspicious)";
+            default: return "url(#arrow-normal)";
+          }
+        })();
+        console.log(`Edge ${d.id} (${d.connection_type}) -> marker: ${marker}`);
+        return marker;
       });
 
     // No animated particles - keeping it static
@@ -833,7 +895,7 @@ export default function EnhancedNetworkView({ country, onBack }: EnhancedNetwork
   // Fetch data on mount only (no real-time updates)
   useEffect(() => {
     fetchNetworkData();
-  }, [country]);
+  }, [incidentId, country]);
 
   return (
     <div className="relative w-full h-screen bg-black">
@@ -851,9 +913,28 @@ export default function EnhancedNetworkView({ country, onBack }: EnhancedNetwork
               Back to Globe
             </button>
             <div>
-              <h1 className="text-3xl font-bold text-white">{country}</h1>
+              <h1 className="text-3xl font-bold text-white">
+                {incidentMetadata ? (
+                  <>🚨 {incidentMetadata.attack_type}</>
+                ) : country ? (
+                  <>{country}</>
+                ) : (
+                  'Loading...'
+                )}
+              </h1>
               <p className="text-gray-400 flex items-center gap-2">
-                Network Security Dashboard
+                {incidentMetadata ? (
+                  <span className={`font-bold ${
+                    incidentMetadata.severity === 'critical' ? 'text-red-500' :
+                    incidentMetadata.severity === 'high' ? 'text-orange-500' :
+                    incidentMetadata.severity === 'medium' ? 'text-yellow-500' :
+                    'text-yellow-300'
+                  }`}>
+                    {incidentMetadata.severity.toUpperCase()} Severity
+                  </span>
+                ) : (
+                  'Network Security Dashboard'
+                )}
                 {loading && (
                   <span className="inline-block w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></span>
                 )}
@@ -890,6 +971,44 @@ export default function EnhancedNetworkView({ country, onBack }: EnhancedNetwork
 
       {/* Real-time stats panel */}
       <div className="absolute top-24 left-6 z-50 space-y-4">
+        {/* Incident Metadata Panel */}
+        {incidentMetadata && (
+          <div className="bg-black/95 backdrop-blur-md rounded-xl p-6 border border-red-500/50 min-w-[300px]">
+            <h2 className="text-xl font-bold text-red-400 mb-4">🚨 Incident Details</h2>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-gray-500">Attack Type:</span>
+                <span className="text-white font-medium">{incidentMetadata.attack_type}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-500">Severity:</span>
+                <span className={`font-bold uppercase ${
+                  incidentMetadata.severity === 'critical' ? 'text-red-500' :
+                  incidentMetadata.severity === 'high' ? 'text-orange-500' :
+                  incidentMetadata.severity === 'medium' ? 'text-yellow-500' :
+                  'text-yellow-300'
+                }`}>
+                  {incidentMetadata.severity}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-500">Victims:</span>
+                <span className="text-red-400 font-mono text-lg">{incidentMetadata.victim_count}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-500">Attackers:</span>
+                <span className="text-orange-400 font-mono text-lg">{incidentMetadata.attacker_count}</span>
+              </div>
+              <div className="pt-2 border-t border-gray-700">
+                <span className="text-gray-500 text-sm">Affected Countries:</span>
+                <div className="text-white text-sm mt-1">
+                  {incidentMetadata.affected_countries.join(', ')}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="bg-black/95 backdrop-blur-md rounded-xl p-6 border border-gray-700 min-w-[300px]">
           <h2 className="text-xl font-bold text-white mb-4">Real-Time Statistics</h2>
           <div className="space-y-3">

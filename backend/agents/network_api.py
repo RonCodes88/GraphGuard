@@ -272,18 +272,23 @@ async def get_country_network_data(country_name: str, time_range: str = "1h"):
                             suspicious_count=suspicious_count,
                             normal_count=normal_count
                         )
+                    else:
+                        # No data for this country in real dataset, fall through to synthetic generation
+                        print(f"No real data found for {country_name}, generating synthetic data")
+                        pass
 
-                # Return all real data if country doesn't match or is Global
-                return NetworkTrafficData(
-                    country=real_data.get("nodes", [{}])[0].get("country", country_name) if real_data.get("nodes") else country_name,
-                    timestamp=datetime.now().isoformat(),
-                    nodes=real_data.get("nodes", []),
-                    edges=real_data.get("edges", []),
-                    total_traffic=real_data.get("statistics", {}).get("total_traffic", 0),
-                    attack_count=real_data.get("statistics", {}).get("attack_count", 0),
-                    suspicious_count=real_data.get("statistics", {}).get("suspicious_count", 0),
-                    normal_count=real_data.get("statistics", {}).get("normal_count", 0)
-                )
+                # Return all real data if is Global
+                if country_name == "Global":
+                    return NetworkTrafficData(
+                        country="Global",
+                        timestamp=datetime.now().isoformat(),
+                        nodes=real_data.get("nodes", []),
+                        edges=real_data.get("edges", []),
+                        total_traffic=real_data.get("statistics", {}).get("total_traffic", 0),
+                        attack_count=real_data.get("statistics", {}).get("attack_count", 0),
+                        suspicious_count=real_data.get("statistics", {}).get("suspicious_count", 0),
+                        normal_count=real_data.get("statistics", {}).get("normal_count", 0)
+                    )
         except Exception as e:
             print(f"Error loading real data, falling back to synthetic: {e}")
 
