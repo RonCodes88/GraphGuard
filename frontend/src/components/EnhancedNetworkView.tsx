@@ -679,8 +679,10 @@ export default function EnhancedNetworkView({ country, onBack }: EnhancedNetwork
         .text((d: any) => {
           switch (d.node_type) {
             case "server": return "🖥️";
-            case "firewall": return "🛡️";
+            case "client": return "💻";
             case "router": return "🔀";
+            case "firewall": return "🛡️";
+            case "load_balancer": return "⚖️";
             case "database": return "🗄️";
             default: return "💻";
           }
@@ -1067,20 +1069,28 @@ export default function EnhancedNetworkView({ country, onBack }: EnhancedNetwork
         </div>
         <div className="mt-5 pt-4 border-t border-slate-700">
           <h5 className="text-white font-medium mb-3 text-base">Node Types</h5>
-          <div className="space-y-2 text-sm">
-            <div className="flex items-center gap-3">
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div className="flex items-center gap-2">
               <span className="text-lg">🖥️</span>
               <span className="text-gray-400 font-medium">Server</span>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="text-lg">🛡️</span>
-              <span className="text-gray-400 font-medium">Firewall</span>
+            <div className="flex items-center gap-2">
+              <span className="text-lg">💻</span>
+              <span className="text-gray-400 font-medium">Client</span>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <span className="text-lg">🔀</span>
               <span className="text-gray-400 font-medium">Router</span>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🛡️</span>
+              <span className="text-gray-400 font-medium">Firewall</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-lg">⚖️</span>
+              <span className="text-gray-400 font-medium">Load Bal.</span>
+            </div>
+            <div className="flex items-center gap-2">
               <span className="text-lg">🗄️</span>
               <span className="text-gray-400 font-medium">Database</span>
             </div>

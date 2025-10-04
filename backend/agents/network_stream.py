@@ -1,6 +1,7 @@
 """
 WebSocket streaming for continuous network traffic simulation
 Provides real-time network traffic updates for visualization
+Supports both real CIC DDoS 2019 data and synthetic generation
 """
 from fastapi import WebSocket, WebSocketDisconnect
 from typing import List, Set
@@ -9,6 +10,7 @@ import json
 import random
 from datetime import datetime
 from agents.network_api import generate_realistic_attack_patterns, NetworkNode
+from agents.data_loader import real_traffic_loader
 
 class NetworkTrafficStreamer:
     """Manages WebSocket connections and streams network traffic data"""
@@ -16,13 +18,14 @@ class NetworkTrafficStreamer:
     def __init__(self):
         self.active_connections: Set[WebSocket] = set()
         self.streaming_active = False
-        
+        self.use_real_data = real_traffic_loader.is_real_data_available()
+
         # Available countries for rotation
         self.countries = [
-            "United States", "China", "Germany", "United Kingdom", "Japan", 
+            "United States", "China", "Germany", "United Kingdom", "Japan",
             "Russia", "Brazil", "India", "France", "South Korea"
         ]
-        
+
         self.city_database = {
             "United States": ["New York", "Washington DC", "Los Angeles", "Chicago", "Dallas"],
             "China": ["Beijing", "Shanghai", "Shenzhen", "Guangzhou", "Chengdu"],
@@ -35,6 +38,12 @@ class NetworkTrafficStreamer:
             "Brazil": ["Brasília", "São Paulo", "Rio de Janeiro", "Salvador", "Fortaleza"],
             "South Korea": ["Seoul", "Busan", "Incheon", "Daegu", "Daejeon"],
         }
+
+        # Log data source mode
+        if self.use_real_data:
+            print("NetworkTrafficStreamer: Using REAL CIC DDoS 2019 data")
+        else:
+            print("NetworkTrafficStreamer: Using SYNTHETIC data (CIC DDoS dataset not loaded)")
     
     async def connect(self, websocket: WebSocket):
         """Accept new WebSocket connection"""
@@ -48,13 +57,38 @@ class NetworkTrafficStreamer:
         print(f"WebSocket disconnected. Active connections: {len(self.active_connections)}")
     
     def generate_traffic_batch(self, country: str = None) -> dict:
-        """Generate a batch of network traffic"""
-        
+        """
+        Generate a batch of network traffic
+        Uses real CIC DDoS data if available, otherwise generates synthetic data
+        """
+
+        # Try to use real data first
+        if self.use_real_data:
+            try:
+                real_batch = real_traffic_loader.get_traffic_batch(batch_size=40)
+
+                if real_batch and real_batch.get("nodes"):
+                    # Add real data indicator
+                    real_batch["data_source"] = "CIC-DDoS-2019"
+                    real_batch["batch_id"] = int(datetime.now().timestamp() * 1000)
+                    real_batch["timestamp"] = datetime.now().isoformat()
+
+                    # Extract country from first node or use "Global"
+                    if real_batch["nodes"]:
+                        real_batch["country"] = real_batch["nodes"][0].get("country", "Global")
+                    else:
+                        real_batch["country"] = "Global"
+
+                    return real_batch
+            except Exception as e:
+                print(f"Error loading real data, falling back to synthetic: {e}")
+
+        # Fallback: Generate synthetic data
         if not country:
             country = random.choice(self.countries)
-        
+
         cities = self.city_database.get(country, ["Capital City", "Major City"])
-        
+
         # Node type distribution
         node_type_weights = {
             "client": 50,
@@ -63,17 +97,17 @@ class NetworkTrafficStreamer:
             "firewall": 7,
             "load_balancer": 3
         }
-        
+
         # Generate 20-40 nodes for each batch
         node_count = random.randint(20, 40)
         nodes = []
-        
+
         for i in range(node_count):
             node_type = random.choices(
                 list(node_type_weights.keys()),
                 weights=list(node_type_weights.values())
             )[0]
-            
+
             status_roll = random.random()
             if status_roll < 0.70:
                 status = "normal"
@@ -83,7 +117,7 @@ class NetworkTrafficStreamer:
                 status = "attacked"
             else:
                 status = "blocked"
-            
+
             node = NetworkNode(
                 id=f"node_{country}_{i}_{int(datetime.now().timestamp() * 1000)}",
                 ip=f"{random.randint(10, 200)}.{random.randint(0, 255)}.{random.randint(0, 255)}.{random.randint(1, 254)}",
@@ -97,16 +131,16 @@ class NetworkTrafficStreamer:
                 last_seen=datetime.now().isoformat()
             )
             nodes.append(node)
-        
+
         # Generate edges with attack patterns
         edges = generate_realistic_attack_patterns(nodes, country)
-        
+
         # Calculate statistics
         total_traffic = sum(node.traffic_volume for node in nodes)
         attack_count = len([e for e in edges if e.connection_type == "attack"])
         suspicious_count = len([e for e in edges if e.connection_type == "suspicious"])
         normal_count = len([e for e in edges if e.connection_type == "normal"])
-        
+
         return {
             "country": country,
             "timestamp": datetime.now().isoformat(),
@@ -116,7 +150,8 @@ class NetworkTrafficStreamer:
             "attack_count": attack_count,
             "suspicious_count": suspicious_count,
             "normal_count": normal_count,
-            "batch_id": int(datetime.now().timestamp() * 1000)
+            "batch_id": int(datetime.now().timestamp() * 1000),
+            "data_source": "synthetic"
         }
     
     async def stream_traffic(

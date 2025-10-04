@@ -64,6 +64,15 @@ export default function NetworkActivityTracker({
           </button>
         </div>
 
+        {/* Data Source Indicator */}
+        {(data as any).data_source && (
+          <div className="mb-3 px-2 py-1 rounded text-xs border flex items-center justify-between bg-gradient-to-r from-purple-900/30 to-blue-900/30 border-purple-500/50">
+            <span className="text-purple-300 font-medium">
+              {(data as any).data_source === 'CIC-DDoS-2019' ? '📊 Real CIC DDoS 2019 Data' : '🔬 Synthetic Data'}
+            </span>
+          </div>
+        )}
+
         {/* Network Statistics */}
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3 text-sm">
@@ -109,6 +118,36 @@ export default function NetworkActivityTracker({
               </div>
             </div>
           </div>
+
+          {/* Attack Type Summary */}
+          {data.attack_count > 0 && (() => {
+            const attackTypes = data.edges
+              .filter(e => e.attack_type)
+              .reduce((acc, e) => {
+                const type = e.attack_type || 'Unknown';
+                acc[type] = (acc[type] || 0) + 1;
+                return acc;
+              }, {} as Record<string, number>);
+
+            return Object.keys(attackTypes).length > 0 ? (
+              <div className="pt-3 border-t border-gray-800">
+                <h4 className="text-white text-sm font-medium mb-2">Active Attacks</h4>
+                <div className="space-y-1">
+                  {Object.entries(attackTypes).slice(0, 5).map(([type, count]) => (
+                    <div key={type} className="flex items-center justify-between text-xs">
+                      <span className="text-red-400 font-medium">{type}</span>
+                      <span className="text-gray-500">{count}x</span>
+                    </div>
+                  ))}
+                  {Object.keys(attackTypes).length > 5 && (
+                    <div className="text-xs text-gray-600 text-center">
+                      +{Object.keys(attackTypes).length - 5} more types
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null;
+          })()}
 
           {/* Node List */}
           <div className="pt-3 border-t border-gray-800">
@@ -160,18 +199,31 @@ export default function NetworkActivityTracker({
                       : 'hover:bg-white/5'
                   }`}
                 >
-                  <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${
+                  <div className="flex items-center gap-2 flex-1">
+                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
                       edge.connection_type === 'normal' ? 'bg-gray-400' :
                       edge.connection_type === 'suspicious' ? 'bg-yellow-500' :
                       'bg-red-500'
                     }`}></div>
-                    <span className="text-gray-300 text-xs">
-                      {edge.source_id.split('_').pop()} → {edge.target_id.split('_').pop()}
-                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-gray-300 text-xs truncate">
+                        {edge.source_id.split(':')[0].split('_').pop()} → {edge.target_id.split(':')[0].split('_').pop()}
+                      </div>
+                      {edge.attack_type && (
+                        <div className="text-red-400 text-[10px] font-medium truncate">
+                          {edge.attack_type}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-xs text-gray-500">
-                    {edge.connection_type}
+                  <div className={`text-xs flex-shrink-0 ${
+                    edge.connection_type === 'attack' ? 'text-red-500' :
+                    edge.connection_type === 'suspicious' ? 'text-yellow-500' :
+                    'text-gray-500'
+                  }`}>
+                    {edge.connection_type === 'attack' ? '⚠️' :
+                     edge.connection_type === 'suspicious' ? '⚠' :
+                     '✓'}
                   </div>
                 </div>
               ))}

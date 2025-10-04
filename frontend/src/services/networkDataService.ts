@@ -46,6 +46,35 @@ export interface GlobalNetworkStats {
   last_updated: string;
 }
 
+export interface AttackIncident {
+  incident_id: string;
+  attack_type: string;
+  center_lat: number;
+  center_lon: number;
+  severity: string;
+  affected_countries: string[];
+  victim_count: number;
+  attacker_count: number;
+  total_nodes: number;
+  total_edges: number;
+  total_packets: number;
+  timestamp: string;
+}
+
+export interface IncidentsList {
+  incidents: AttackIncident[];
+  total_incidents: number;
+  timestamp: string;
+}
+
+export interface IncidentDetails {
+  incident: AttackIncident & {
+    nodes: NetworkNode[];
+    edges: NetworkEdge[];
+  };
+  timestamp: string;
+}
+
 class NetworkDataService {
   private baseUrl: string;
 
@@ -305,6 +334,44 @@ class NetworkDataService {
       suspicious_count: suspiciousCount,
       normal_count: normalCount
     };
+  }
+
+  /**
+   * Get list of attack incidents for globe visualization
+   */
+  async getAttackIncidents(): Promise<IncidentsList> {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/network/incidents`);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error("Error fetching attack incidents:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get detailed information about a specific incident
+   */
+  async getIncidentDetails(incidentId: string): Promise<IncidentDetails> {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/network/incident/${incidentId}`);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error(`Error fetching incident ${incidentId}:`, error);
+      throw error;
+    }
   }
 }
 

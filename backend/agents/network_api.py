@@ -1,6 +1,7 @@
 """
 Network Data API endpoints for the Earth visualization
 Enhanced with realistic network attack patterns and AI agent integration
+Supports real CIC DDoS 2019 data when available
 """
 from fastapi import APIRouter, HTTPException
 from typing import Dict, Any, List, Optional
@@ -8,8 +9,14 @@ from pydantic import BaseModel
 import random
 from datetime import datetime
 import time
+from agents.data_loader import real_traffic_loader
+from agents.incident_aggregator import incident_aggregator
 
 router = APIRouter(prefix="/api/network", tags=["network"])
+
+# Global incidents cache
+_incidents_cache = None
+_incidents_cache_time = None
 
 # Global state for attack simulation
 attack_state = {
@@ -230,9 +237,57 @@ def generate_realistic_attack_patterns(nodes: List[NetworkNode], country_name: s
 async def get_country_network_data(country_name: str, time_range: str = "1h"):
     """
     Get network traffic data for a specific country with realistic attack patterns
-    Simulates real-world network security scenarios
+    Uses real CIC DDoS 2019 data when available, otherwise simulates
     """
-    
+
+    # Try to use real data first
+    if real_traffic_loader.is_real_data_available():
+        try:
+            real_data = real_traffic_loader.get_traffic_batch(batch_size=50)
+
+            if real_data and real_data.get("nodes"):
+                # Filter nodes by country if specific country requested
+                if country_name and country_name != "Global":
+                    filtered_nodes = [n for n in real_data["nodes"] if n.get("country") == country_name]
+
+                    if filtered_nodes:
+                        # Get edges involving filtered nodes
+                        node_ids = {n["id"] for n in filtered_nodes}
+                        filtered_edges = [e for e in real_data["edges"]
+                                        if e["source_id"] in node_ids or e["target_id"] in node_ids]
+
+                        # Recalculate statistics
+                        total_traffic = sum(n.get("traffic_volume", 0) for n in filtered_nodes)
+                        attack_count = len([e for e in filtered_edges if e.get("connection_type") == "attack"])
+                        suspicious_count = len([e for e in filtered_edges if e.get("connection_type") == "suspicious"])
+                        normal_count = len([e for e in filtered_edges if e.get("connection_type") == "normal"])
+
+                        return NetworkTrafficData(
+                            country=country_name,
+                            timestamp=datetime.now().isoformat(),
+                            nodes=filtered_nodes,
+                            edges=filtered_edges,
+                            total_traffic=total_traffic,
+                            attack_count=attack_count,
+                            suspicious_count=suspicious_count,
+                            normal_count=normal_count
+                        )
+
+                # Return all real data if country doesn't match or is Global
+                return NetworkTrafficData(
+                    country=real_data.get("nodes", [{}])[0].get("country", country_name) if real_data.get("nodes") else country_name,
+                    timestamp=datetime.now().isoformat(),
+                    nodes=real_data.get("nodes", []),
+                    edges=real_data.get("edges", []),
+                    total_traffic=real_data.get("statistics", {}).get("total_traffic", 0),
+                    attack_count=real_data.get("statistics", {}).get("attack_count", 0),
+                    suspicious_count=real_data.get("statistics", {}).get("suspicious_count", 0),
+                    normal_count=real_data.get("statistics", {}).get("normal_count", 0)
+                )
+        except Exception as e:
+            print(f"Error loading real data, falling back to synthetic: {e}")
+
+    # Fallback to synthetic data generation
     # City data for major global locations
     city_database = {
         "United States": ["New York", "Washington DC", "Los Angeles", "Chicago", "Dallas"],
@@ -246,7 +301,7 @@ async def get_country_network_data(country_name: str, time_range: str = "1h"):
         "Brazil": ["Brasília", "São Paulo", "Rio de Janeiro", "Salvador", "Fortaleza"],
         "Canada": ["Ottawa", "Toronto", "Vancouver", "Montreal", "Calgary"],
     }
-    
+
     cities = city_database.get(country_name, ["Capital City", "Major City", "Regional Hub", "Data Center"])
     
     # Node type distribution (realistic network composition)
@@ -327,6 +382,14 @@ async def get_global_network_stats():
         suspicious_activity=random.randint(50, 200),
         last_updated=datetime.now().isoformat()
     )
+
+
+@router.get("/dataset/info")
+async def get_dataset_info():
+    """Get information about the loaded dataset"""
+    info = real_traffic_loader.get_dataset_info()
+    info["attack_types"] = real_traffic_loader.get_attack_types_available()
+    return info
 
 
 @router.get("/global")
@@ -415,3 +478,81 @@ async def get_global_network_data():
         suspicious_count=total_suspicious_count,
         normal_count=total_normal_count
     )
+
+
+@router.get("/incidents")
+async def get_attack_incidents():
+    """
+    Get list of attack incidents for globe hotspot visualization
+    Each incident represents a discrete attack with geographic location
+    """
+    global _incidents_cache, _incidents_cache_time
+
+    # Cache incidents for 5 minutes
+    cache_duration = 300
+    current_time = time.time()
+
+    if _incidents_cache is None or _incidents_cache_time is None or \
+       (current_time - _incidents_cache_time) > cache_duration:
+
+        # Load incidents from processed data
+        if real_traffic_loader.is_real_data_available():
+            incidents = incident_aggregator.load_all_incidents(
+                processed_data_dir="data/processed",
+                incidents_per_dataset=1
+            )
+
+            _incidents_cache = incidents
+            _incidents_cache_time = current_time
+        else:
+            _incidents_cache = []
+            _incidents_cache_time = current_time
+
+    # Return incident summaries (without full node/edge data for performance)
+    incident_summaries = []
+    for incident in _incidents_cache:
+        summary = {
+            "incident_id": incident["incident_id"],
+            "attack_type": incident["attack_type"],
+            "center_lat": incident["center_lat"],
+            "center_lon": incident["center_lon"],
+            "severity": incident["severity"],
+            "affected_countries": incident["affected_countries"],
+            "victim_count": incident["victim_count"],
+            "attacker_count": incident["attacker_count"],
+            "total_nodes": incident["total_nodes"],
+            "total_edges": incident["total_edges"],
+            "total_packets": incident["total_packets"],
+            "timestamp": incident["timestamp"]
+        }
+        incident_summaries.append(summary)
+
+    return {
+        "incidents": incident_summaries,
+        "total_incidents": len(incident_summaries),
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+@router.get("/incident/{incident_id}")
+async def get_incident_details(incident_id: str):
+    """
+    Get full details of a specific attack incident including all nodes and edges
+    """
+    global _incidents_cache
+
+    if _incidents_cache is None:
+        # Trigger incident loading
+        await get_attack_incidents()
+
+    # Find the incident
+    incident = next((i for i in _incidents_cache if i["incident_id"] == incident_id), None)
+
+    if not incident:
+        raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+
+    # Return full incident data
+    return {
+        "incident": incident,
+        "timestamp": datetime.now().isoformat()
+    }
