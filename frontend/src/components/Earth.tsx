@@ -39,10 +39,10 @@ export default function Earth({ onCountryViewChange }: EarthProps) {
   const [countryNetworkData, setCountryNetworkData] = useState<NetworkTrafficData | null>(null);
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
 
-  // Notify parent when incident view changes
+  // Notify parent when incident view or country view changes
   useEffect(() => {
-    onCountryViewChange?.(selectedIncidentId !== null);
-  }, [selectedIncidentId, onCountryViewChange]);
+    onCountryViewChange?.(selectedIncidentId !== null || selectedCountry !== null);
+  }, [selectedIncidentId, selectedCountry, onCountryViewChange]);
 
 
   // Fetch incidents from backend

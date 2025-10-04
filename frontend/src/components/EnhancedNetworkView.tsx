@@ -1316,18 +1316,6 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
                 Connected to {networkData.edges.filter(e => e && e.source_id === selectedNode.id || e.target_id === selectedNode.id).length} other nodes
               </div>
               
-              {/* AI Agent Analysis Button */}
-              <div className="mt-4">
-                <button 
-                  onClick={() => analyzeAttackedNode(selectedNode)}
-                  className="w-full px-4 py-3 rounded-lg font-medium transition-all bg-blue-600 hover:bg-blue-700 text-white"
-                >
-                  🤖 Analyze with AI Agents
-                </button>
-                <div className="text-xs text-gray-500 mt-2 text-center">
-                  Click to run multi-agent analysis on this node
-                </div>
-              </div>
             </div>
           )}
         </div>
@@ -1523,24 +1511,6 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
         )}
       </div>
 
-      {/* Process Button */}
-      <button
-        onClick={processWithAgents}
-        disabled={isAgentProcessing || !networkData}
-        className="absolute bottom-4 left-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-6 py-3 rounded-lg transition-colors font-medium shadow-lg"
-      >
-        {isAgentProcessing ? (
-          <>
-            <span className="animate-spin mr-2">🔄</span>
-            AI Agents Working...
-          </>
-        ) : (
-          <>
-            <span className="mr-2">🤖</span>
-            Analyze with AI Agents
-          </>
-        )}
-      </button>
 
       {/* Attacked Node Analysis Modal */}
       {showActionPanel && (

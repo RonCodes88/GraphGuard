@@ -235,66 +235,6 @@ export default function MonitoringPanel() {
           )}
         </div>
 
-        {/* Global Statistics */}
-        <div className="p-3 border-b border-gray-800 bg-gray-950/30">
-          <h2 className="text-xs font-semibold text-white mb-2 tracking-wider">GLOBAL STATISTICS</h2>
-          <div className="grid grid-cols-3 gap-2 text-xs">
-            <div className="bg-black/50 p-2 rounded border border-gray-800">
-              <div className="text-gray-600">Online</div>
-              <div className="text-white font-bold">{stats?.online || 0}/{stats?.totalCountries || 0}</div>
-            </div>
-            <div className="bg-black/50 p-2 rounded border border-gray-800">
-              <div className="text-gray-600">Alerts</div>
-              <div className="text-red-500 font-bold">{stats?.alerts || 0}</div>
-            </div>
-            <div className="bg-black/50 p-2 rounded border border-gray-800">
-              <div className="text-gray-600">Warnings</div>
-              <div className="text-amber-500 font-bold">{stats?.warns || 0}</div>
-            </div>
-            <div className="bg-black/50 p-2 rounded border border-gray-800">
-              <div className="text-gray-600">Normal</div>
-              <div className="text-emerald-500 font-bold">{stats?.oks || 0}</div>
-            </div>
-            <div className="bg-black/50 p-2 rounded border border-gray-800">
-              <div className="text-gray-600">Incidents</div>
-              <div className="text-yellow-500 font-bold">{stats?.activeIncidents || 0}</div>
-            </div>
-            <div className="bg-black/50 p-2 rounded border border-gray-800">
-              <div className="text-gray-600">Status</div>
-              <div className={`font-bold ${isStreaming ? "text-blue-500" : "text-green-500"}`}>
-                {isStreaming ? "STREAMING" : "ACTIVE"}
-              </div>
-            </div>
-          </div>
-          
-          {/* Streaming Controls */}
-          <div className="mt-3 flex gap-2">
-            <button
-              onClick={isStreaming ? stopStreaming : startStreaming}
-              className={`px-3 py-1 text-xs rounded transition-colors ${
-                isStreaming 
-                  ? "bg-red-600 hover:bg-red-700 text-white" 
-                  : "bg-blue-600 hover:bg-blue-700 text-white"
-              }`}
-            >
-              {isStreaming ? "Stop Stream" : "Start Stream"}
-            </button>
-            {error && (
-              <button
-                onClick={clearError}
-                className="px-3 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded"
-              >
-                Clear Error
-              </button>
-            )}
-          </div>
-          
-          {error && (
-            <div className="mt-2 text-xs text-red-400 bg-red-900/20 p-2 rounded">
-              Error: {error}
-            </div>
-          )}
-        </div>
 
         {/* Active Incidents */}
         <div className="p-3 border-b border-gray-800">
