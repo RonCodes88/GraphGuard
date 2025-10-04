@@ -13,11 +13,18 @@ import {
   useCurrentScenario,
   useSetFilters,
   useSetScenario,
+  useFetchEvents,
   useStartStreaming,
   useStopStreaming,
-  useClearError
+  useClearError,
+  useStreamSingleEvent,
+  useDisplayNextEvent,
+  useCurrentPage,
+  useEventsPerPage,
+  useSetCurrentPage,
+  useGetPaginatedEvents
 } from "@/store/cicStore";
-import { formatTime, getTimeAgo } from "@/services/cicDataClient";
+import { formatTime, formatTimeSincePosted, getTimeAgo } from "@/services/cicDataClient";
 import { SeverityLevel, TimeWindow } from "@/types/cic";
 
 type IncidentStatus = "monitoring" | "mitigating";
@@ -42,13 +49,39 @@ export default function MonitoringPanel() {
   // Individual action hooks (prevents getServerSnapshot infinite loop)
   const setFilters = useSetFilters();
   const setScenario = useSetScenario();
+  const fetchEvents = useFetchEvents();
   const startStreaming = useStartStreaming();
   const stopStreaming = useStopStreaming();
   const clearError = useClearError();
+  
+  // Progressive loading hooks
+  const displayNextEvent = useDisplayNextEvent();
+  const streamSingleEvent = useStreamSingleEvent();
+  
+  // Pagination hooks
+  const currentPage = useCurrentPage();
+  const eventsPerPage = useEventsPerPage();
+  const setCurrentPage = useSetCurrentPage();
+  const getPaginatedEvents = useGetPaginatedEvents();
+  
+  // Get paginated events (max 10 at a time)
+  const paginatedEvents = getPaginatedEvents();
+
+  // State to force re-render for updating timestamps
+  const [timeUpdateTrigger, setTimeUpdateTrigger] = useState(0);
 
   // Prevent hydration errors by only rendering time-dependent content on client
   useEffect(() => {
     setIsMounted(true);
+  }, []);
+
+  // Update timestamps every second for live time display
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTimeUpdateTrigger(prev => prev + 1);
+    }, 1000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   // Simulate monitoring agent activity
@@ -60,10 +93,34 @@ export default function MonitoringPanel() {
     return () => clearInterval(interval);
   }, []);
 
-  // Handle search query changes
+  // Continuous updates for worldwide events - stream single events every 2 seconds, display every 4 seconds
   useEffect(() => {
-    setFilters({ country: searchQuery || undefined });
-  }, [searchQuery, setFilters]);
+    const streamEvents = async () => {
+      try {
+        // Stream a single event to queue
+        await streamSingleEvent();
+      } catch (error) {
+        console.error('Failed to stream single event:', error);
+      }
+    };
+
+    // Stream events every 2 seconds (add to queue)
+    const streamInterval = setInterval(streamEvents, 2000);
+    
+    // Display events from queue every 4 seconds
+    const displayInterval = setInterval(() => {
+      displayNextEvent();
+    }, 4000);
+    
+    // Also stream immediately when component mounts
+    streamEvents();
+
+    return () => {
+      clearInterval(streamInterval);
+      clearInterval(displayInterval);
+    };
+  }, [streamSingleEvent, displayNextEvent]);
+
 
   // Simulate monitoring agent analysis
   const analyzeWithMonitoringAgent = async () => {
@@ -236,47 +293,19 @@ export default function MonitoringPanel() {
         </div>
 
 
-        {/* Active Incidents */}
-        <div className="p-3 border-b border-gray-800">
-          <h2 className="text-xs font-semibold text-white mb-2 tracking-wider">ACTIVE INCIDENTS ({activeIncidents.length})</h2>
-          <div className="space-y-2">
-            {activeIncidents.map((incident) => (
-              <div key={incident.incident_id} className="bg-black/50 border border-gray-800 rounded p-2.5 hover:bg-black/70 transition-colors">
-                <div className="flex items-start justify-between mb-1.5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-white">{incident.incident_id}</span>
-                    <span className={`text-xs px-1.5 py-0.5 rounded font-bold ${
-                      incident.latest_event.severity === "ALERT" ? "bg-red-500 text-white" : "bg-amber-500 text-black"
-                    }`}>
-                      {incident.latest_event.severity}
-                    </span>
-                  </div>
-                  <span className="text-xs text-gray-600">{getTimeAgo(incident.first_seen)}</span>
-                </div>
-                <div className="text-xs text-gray-300 mb-1.5">{incident.latest_event.reason}</div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500">{incident.event_count} events</span>
-                  <span className="text-gray-500">{incident.latest_event.country}</span>
-                </div>
-              </div>
-            ))}
-            {activeIncidents.length === 0 && (
-              <div className="text-xs text-gray-500 text-center py-4">
-                No active incidents
-              </div>
-            )}
-          </div>
-        </div>
 
         {/* Worldwide Events */}
         <div className="p-3">
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-xs font-semibold text-white tracking-wider">
-              WORLDWIDE EVENTS {searchQuery && `— ${recentEvents.length} in ${searchQuery}`}
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xs font-semibold text-white tracking-wider">
+                WORLDWIDE EVENTS {searchQuery && `— ${paginatedEvents.length} in ${searchQuery}`}
+              </h2>
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" title="New event every 4 seconds"></div>
+            </div>
             {!searchQuery && (
               <div className="text-xs text-gray-600">
-                {recentEvents.length} in last {filters.window}
+                {paginatedEvents.length} in last {filters.window}
               </div>
             )}
           </div>
@@ -325,11 +354,10 @@ export default function MonitoringPanel() {
           )}
           
           <div className="space-y-1">
-            {recentEvents.map((event) => (
+            {paginatedEvents.map((event) => (
               <div key={`${event.incident_id}-${event.ts}`}>
                 <div
-                  onClick={() => setExpandedLog(expandedLog === `${event.incident_id}-${event.ts}` ? null : `${event.incident_id}-${event.ts}`)}
-                  className={`border-l-2 ${getSeverityColor(event.severity)} p-2 cursor-pointer hover:bg-white/5 transition-colors rounded-r`}
+                  className={`border-l-2 ${getSeverityColor(event.severity)} p-2 transition-colors rounded-r`}
                 >
                   <div className="flex items-start justify-between mb-1">
                     <div className="flex items-center gap-2">
@@ -338,8 +366,8 @@ export default function MonitoringPanel() {
                       </span>
                       <span className="text-xs text-white font-medium">🌍 {event.country}</span>
                     </div>
-                    <span className="text-xs text-gray-600 font-mono" suppressHydrationWarning>
-                      {isMounted ? formatTime(event.ts) : "00:00:00"}
+                    <span className="text-xs text-gray-400 font-medium" suppressHydrationWarning>
+                      {isMounted ? formatTimeSincePosted(event.postedAt) : "Just now"}
                     </span>
                   </div>
                   <div className="text-xs font-semibold text-gray-200 mb-1">{event.reason}</div>
@@ -348,9 +376,11 @@ export default function MonitoringPanel() {
                     <span className="text-gray-500">
                       🎯 <span className="text-yellow-500">{event.ip}</span>
                     </span>
-                    <span className="text-gray-500">
-                      📋 <span className="text-gray-400">{event.status}</span>
-                    </span>
+                    {event.status && event.status !== "investigating" && event.status !== "monitoring" && (
+                      <span className="text-gray-500">
+                        📋 <span className="text-gray-400">{event.status}</span>
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -373,38 +403,56 @@ export default function MonitoringPanel() {
                           <span className="text-yellow-500">{event.ip}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-gray-600">Reason:</span>
-                          <span className="text-white">{event.reason}</span>
+                          <span className="text-gray-600">Severity:</span>
+                          <span className={`font-bold ${getSeverityBadgeColor(event.severity)}`}>{event.severity}</span>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Change:</span>
-                          <span className="text-gray-300">{event.change}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Status:</span>
-                          <span className="text-gray-300">{event.status}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Next Step:</span>
-                          <span className="text-blue-300">{event.next_step}</span>
-                        </div>
+                        {event.status && event.status !== "investigating" && event.status !== "monitoring" && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Status:</span>
+                            <span className="text-gray-300">{event.status}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between">
                           <span className="text-gray-600">Timestamp:</span>
-                          <span className="text-white" suppressHydrationWarning>
-                            {isMounted ? new Date(event.ts).toLocaleString() : "Loading..."}
-                          </span>
+                          <span className="text-gray-300">{formatDateTime(event.ts)}</span>
                         </div>
                       </div>
                     </div>
-                    <button className="w-full mt-2 bg-gray-800 hover:bg-gray-700 text-gray-300 py-1.5 rounded text-xs transition-colors">
-                      View on Globe
-                    </button>
+                    <div>
+                      <div className="text-gray-500 mb-1">Next Step:</div>
+                      <div className="text-gray-300">{event.next_step}</div>
+                    </div>
                   </div>
                 )}
               </div>
             ))}
             
-            {recentEvents.length === 0 && !isLoading && (
+            {/* Pagination Controls */}
+            {recentEvents.length > eventsPerPage && (
+              <div className="flex justify-center items-center gap-2 pt-3">
+                <button
+                  onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1 bg-gray-800 hover:bg-gray-700 disabled:bg-gray-900 disabled:opacity-50 text-white text-xs rounded transition-colors"
+                >
+                  ← Previous
+                </button>
+                
+                <span className="text-xs text-gray-400">
+                  Page {currentPage} of {Math.ceil(recentEvents.length / eventsPerPage)}
+                </span>
+                
+                <button
+                  onClick={() => setCurrentPage(Math.min(Math.ceil(recentEvents.length / eventsPerPage), currentPage + 1))}
+                  disabled={currentPage >= Math.ceil(recentEvents.length / eventsPerPage)}
+                  className="px-3 py-1 bg-gray-800 hover:bg-gray-700 disabled:bg-gray-900 disabled:opacity-50 text-white text-xs rounded transition-colors"
+                >
+                  Next →
+                </button>
+              </div>
+            )}
+            
+            {paginatedEvents.length === 0 && !isLoading && (
               <div className="text-xs text-gray-500 text-center py-4">
                 No events found
               </div>
@@ -416,3 +464,4 @@ export default function MonitoringPanel() {
     </div>
   );
 }
+
