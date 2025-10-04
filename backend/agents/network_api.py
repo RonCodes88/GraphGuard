@@ -17,6 +17,14 @@ router = APIRouter(prefix="/api/network", tags=["network"])
 # Global incidents cache
 _incidents_cache = None
 _incidents_cache_time = None
+_full_incidents_cache = None  # Full incident data with all nodes
+
+# Streaming simulation state - per incident
+streaming_states = {}  # incident_id -> state dict
+streaming_config = {
+    "total_batches": 20,  # 20 batches = faster demo
+    "batch_interval": 3,  # 3 seconds per batch = 1 minute total
+}
 
 # Global state for attack simulation
 attack_state = {
@@ -540,11 +548,15 @@ async def get_attack_incidents():
 
 
 @router.get("/incident/{incident_id}")
-async def get_incident_details(incident_id: str):
+async def get_incident_details(incident_id: str, stream_batch: Optional[int] = None):
     """
     Get full details of a specific attack incident including all nodes and edges
+
+    Args:
+        incident_id: The incident ID
+        stream_batch: Optional batch number for progressive loading (0-19 for 5min demo)
     """
-    global _incidents_cache
+    global _incidents_cache, _full_incidents_cache, streaming_config
 
     if _incidents_cache is None:
         # Trigger incident loading
@@ -556,8 +568,113 @@ async def get_incident_details(incident_id: str):
     if not incident:
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
 
-    # Return full incident data
+    # If streaming batch requested, return progressive data
+    if stream_batch is not None:
+        all_nodes = incident.get("nodes", [])
+        all_edges = incident.get("edges", [])
+
+        # Calculate how many nodes/edges to return for this batch
+        total_batches = streaming_config["total_batches"]
+        batch_num = min(stream_batch, total_batches - 1)
+
+        # Progressive loading: return more data with each batch
+        progress = (batch_num + 1) / total_batches
+        nodes_to_return = int(len(all_nodes) * progress)
+        edges_to_return = int(len(all_edges) * progress)
+
+        partial_incident = {
+            **incident,
+            "nodes": all_nodes[:nodes_to_return],
+            "edges": all_edges[:edges_to_return],
+            "batch_info": {
+                "batch_number": batch_num,
+                "total_batches": total_batches,
+                "progress_percent": round(progress * 100, 1),
+                "nodes_loaded": nodes_to_return,
+                "edges_loaded": edges_to_return,
+                "total_nodes": len(all_nodes),
+                "total_edges": len(all_edges)
+            }
+        }
+
+        return {
+            "incident": partial_incident,
+            "timestamp": datetime.now().isoformat()
+        }
+
+    # Return full incident data with batch_info showing completion
+    full_incident = {
+        **incident,
+        "batch_info": {
+            "batch_number": streaming_config["total_batches"] - 1,
+            "total_batches": streaming_config["total_batches"],
+            "progress_percent": 100.0,
+            "nodes_loaded": len(incident.get("nodes", [])),
+            "edges_loaded": len(incident.get("edges", [])),
+            "total_nodes": len(incident.get("nodes", [])),
+            "total_edges": len(incident.get("edges", []))
+        }
+    }
+
     return {
-        "incident": incident,
+        "incident": full_incident,
         "timestamp": datetime.now().isoformat()
     }
+
+
+@router.get("/incident/{incident_id}/stream")
+async def get_incident_stream_status(incident_id: str):
+    """
+    Get current streaming status for an incident
+    Returns which batch the client should request next
+    """
+    global streaming_states, streaming_config
+
+    current_time = time.time()
+
+    # Initialize streaming for this incident if not started
+    if incident_id not in streaming_states:
+        streaming_states[incident_id] = {
+            "start_time": current_time,
+            "current_batch": 0
+        }
+
+    incident_state = streaming_states[incident_id]
+
+    # Calculate current batch based on elapsed time
+    elapsed = current_time - incident_state["start_time"]
+    current_batch = min(
+        int(elapsed / streaming_config["batch_interval"]),
+        streaming_config["total_batches"] - 1
+    )
+
+    incident_state["current_batch"] = current_batch
+
+    is_complete = current_batch >= streaming_config["total_batches"] - 1
+
+    return {
+        "incident_id": incident_id,
+        "current_batch": current_batch,
+        "total_batches": streaming_config["total_batches"],
+        "batch_interval_seconds": streaming_config["batch_interval"],
+        "elapsed_seconds": round(elapsed, 1),
+        "progress_percent": round((current_batch + 1) / streaming_config["total_batches"] * 100, 1),
+        "is_complete": is_complete,
+        "next_batch_in_seconds": round(streaming_config["batch_interval"] - (elapsed % streaming_config["batch_interval"]), 1) if not is_complete else 0
+    }
+
+
+@router.post("/incident/stream/reset")
+async def reset_incident_stream(incident_id: Optional[str] = None):
+    """Reset the streaming simulation for an incident or all incidents"""
+    global streaming_states
+
+    if incident_id:
+        # Reset specific incident
+        if incident_id in streaming_states:
+            del streaming_states[incident_id]
+        return {"message": f"Stream reset for {incident_id}", "status": "ready"}
+    else:
+        # Reset all incidents
+        streaming_states.clear()
+        return {"message": "All streams reset", "status": "ready"}
