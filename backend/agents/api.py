@@ -43,6 +43,15 @@ async def process_with_agents(request: AgentRequest):
     6. Mitigator - Takes action
     """
     try:
+        # Debug: Log the NetFlow data received by agents
+        print("=== AGENT API RECEIVED NETFLOW DATA ===")
+        print(f"Nodes: {len(request.data.get('nodes', []))}")
+        print(f"Edges: {len(request.data.get('edges', []))}")
+        if request.data.get('edges'):
+            sample_edge = request.data['edges'][0]
+            print(f"Sample Edge: {sample_edge}")
+        print("=====================================")
+        
         # Run the agent workflow
         result: AgentState = await workflow.run(
             input_data=request.data,

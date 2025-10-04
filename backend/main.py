@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from agents.api import router as agents_router
 from agents.network_api import router as network_router
 from agents.network_stream import network_streamer
+from agents.cic_replayer import app as cic_replayer_app
 
 app = FastAPI(
     title="A10Hacks AI Agent System",
@@ -23,6 +24,9 @@ app.add_middleware(
 app.include_router(agents_router)
 app.include_router(network_router)
 
+# Include CIC replayer routes
+app.mount("/cic", cic_replayer_app)
+
 @app.get("/")
 async def root():
     return {
@@ -30,7 +34,8 @@ async def root():
         "docs": "/docs",
         "agents": "/api/agents",
         "network": "/api/network",
-        "stream": "/ws/network/stream"
+        "stream": "/ws/network/stream",
+        "cic_replayer": "/cic"
     }
 
 @app.get("/api/health")

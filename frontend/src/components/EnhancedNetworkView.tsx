@@ -357,6 +357,12 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
         }));
       }
       
+      // Debug: Log the NetFlow data being sent to agents
+      console.log('Sending NetFlow data to agents:', {
+        nodes: networkData.nodes,
+        edges: networkData.edges
+      });
+      
       // Call the backend API
       const response = await fetch('http://localhost:8000/api/agents/process', {
         method: 'POST',
