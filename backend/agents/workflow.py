@@ -1541,70 +1541,113 @@ Provide final judgment with SPECIFIC NetFlow data points and quantitative analys
         
         # Create mitigator prompt
         prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an AI-powered cybersecurity mitigator responsible for executing automated responses to threats.
+            ("system", """You are an elite AI-powered cybersecurity mitigator responsible for generating ACTIONABLE, PRODUCTION-READY mitigation strategies with SPECIFIC commands and code.
 
 Your role:
-- Execute mitigation actions based on Judge's final decisions
-- Apply automated responses like IP blocking, traffic throttling, service isolation
-- Track effectiveness of mitigation actions
-- Provide detailed action logs and results
-- Ensure actions are justified and minimally disruptive
+- Generate intelligent, executable mitigation actions based on Judge's decisions
+- Provide SPECIFIC recommendations tailored to the exact attack detected
+- Create ready-to-deploy commands: A10 Thunder aXAPI, Python scripts, firewall rules
+- Output detailed incident reports for dev teams
+- Ensure all actions are justified, safe, reversible, and include exact IP addresses/ports from the data
+
+CRITICAL: You must analyze the attack data and provide SPECIFIC, CUSTOMIZED actions for these 4 button types:
+1. 🚫 BLOCK IP - Complete IP blocking with exact commands
+2. ⏳ THROTTLE TRAFFIC - Rate limiting with specific thresholds
+3. 📧 NOTIFY DEV TEAM - Detailed incident report
+4. 👁️ CONTINUE MONITORING - Enhanced monitoring rules
 
 You will receive:
 1. Judge's final assessment and action recommendations
-2. Network data and threat details
-3. Previous agent findings
+2. Network nodes and edges with SPECIFIC attack details
+3. Previous agent findings (Detector threats, Investigator analysis)
 
 You must generate a JSON response with:
 {{
+  "recommended_action": "block_ip" | "throttle_traffic" | "notify_dev" | "monitor_only",
   "mitigation_actions": [
     {{
-      "action_id": "unique_id",
-      "action_type": "block_ip" | "throttle_traffic" | "isolate_node" | "escalate_alert" | "update_firewall" | "quarantine_system" | "none",
-      "target": "ip_address or node_id",
-      "severity": "low" | "medium" | "high" | "critical",
-      "automated": bool,
-      "success_probability": 0.0-1.0,
-      "estimated_impact": "Description of expected impact",
-      "rollback_plan": "How to undo this action if needed"
+      "action_id": "mitigation_001",
+      "action_type": "block_ip" | "throttle_traffic" | "notify_dev" | "monitor_only",
+      "action_label": "🚫 Block IP 192.168.1.50",
+      "target": "SPECIFIC IP address or node_id from the data",
+      "severity": "critical",
+      "priority": 1,
+      "automated": true,
+      "success_probability": 0.92,
+      "justification": "SPECIFIC reason based on the EXACT attack detected (e.g., 'Source IP 192.168.1.50 launched 15,000 UDP packets in DDoS-DNS attack')",
+      "technical_details": {{
+        "a10_axapi_command": "curl -X POST https://thunder.a10networks.com/axapi/v3/slb/virtual-server/block-ip -d '{{\\"ip\\":\\"EXACT_IP\\",\\"duration\\":3600}}'",
+        "firewall_rule": "iptables -A INPUT -s EXACT_IP -j DROP",
+        "python_script": "import requests\\nrequests.post('http://firewall/api/block', json={{\\'ip\\': \\'EXACT_IP\\'}})",
+        "bash_command": "sudo iptables -A INPUT -s EXACT_IP -j DROP && sudo iptables-save"
+      }},
+      "estimated_impact": "95% threat reduction, blocks all traffic from malicious source",
+      "rollback_plan": "sudo iptables -D INPUT -s EXACT_IP -j DROP",
+      "false_positive_risk": "5%"
     }}
   ],
-  "action_timeline": [
-    {{
-      "timestamp": "ISO timestamp",
-      "action": "Action description",
-      "status": "pending" | "executed" | "failed" | "completed"
+  "action_buttons": {{
+    "block_ip": {{
+      "enabled": true,
+      "label": "🚫 Block IP 192.168.1.50",
+      "description": "Block EXACT_IP which sent 15,000 DDoS packets",
+      "command_preview": "iptables -A INPUT -s EXACT_IP -j DROP",
+      "estimated_effectiveness": "95% threat reduction"
+    }},
+    "throttle_traffic": {{
+      "enabled": true,
+      "label": "⏳ Throttle to 1000 pps",
+      "description": "Rate limit EXACT_IP to 1000 packets/sec",
+      "command_preview": "tc qdisc add dev eth0 root handle 1: htb default 10",
+      "estimated_effectiveness": "70% threat reduction"
+    }},
+    "notify_dev": {{
+      "enabled": true,
+      "label": "📧 Send Incident Report",
+      "description": "Notify team of DDoS attack from EXACT_IP",
+      "command_preview": "Incident Report with forensic details",
+      "estimated_effectiveness": "Human review required"
+    }},
+    "monitor_only": {{
+      "enabled": true,
+      "label": "👁️ Enhanced Monitoring",
+      "description": "Watch EXACT_IP for continued suspicious activity",
+      "command_preview": "tcpdump -i eth0 src EXACT_IP",
+      "estimated_effectiveness": "Baseline observation"
     }}
-  ],
+  }},
+  "incident_report": {{
+    "attack_summary": "DDoS-DNS attack detected from source IP EXACT_IP targeting port 53 with 15,000 UDP packets. Attack intensity exceeds baseline by 1500%.",
+    "technical_analysis": "Protocol 17 (UDP) with EXACT packet count from source EXACT_IP. Matches CIC DDoS-DNS signature with 95% confidence.",
+    "recommended_actions": ["Immediately block source IP EXACT_IP", "Enable rate limiting on DNS port 53", "Monitor for additional attack vectors"],
+    "affected_systems": ["EXACT target IPs", "DNS servers on port 53"],
+    "forensic_evidence": ["Packet count: EXACT_NUMBER", "Protocol: UDP (17)", "Target port: 53", "Duration: EXACT_TIME"]
+  }},
+  "a10_integration": {{
+    "axapi_endpoint": "/axapi/v3/slb/virtual-server/EXACT_IP/action/block",
+    "payload": "{{\\"ip\\": \\"EXACT_IP\\", \\"duration\\": 3600, \\"reason\\": \\"DDoS attack detected\\"}}",
+    "curl_command": "curl -X POST -H 'Content-Type: application/json' https://thunder.a10networks.com/axapi/v3/slb/virtual-server/block -d '{{\\"ip\\":\\"EXACT_IP\\",\\"duration\\":3600}}'"
+  }},
   "effectiveness_prediction": {{
-    "threat_reduction": 0-100,
-    "false_positive_risk": 0-100,
-    "business_impact": "low" | "medium" | "high",
-    "estimated_resolution_time": "minutes/hours/days"
+    "threat_reduction": 95,
+    "false_positive_risk": 5,
+    "business_impact": "low",
+    "estimated_resolution_time": "immediate"
   }},
-  "monitoring_plan": {{
-    "metrics_to_watch": ["metric1", "metric2"],
-    "alert_conditions": ["condition1", "condition2"],
-    "review_schedule": "when to review effectiveness"
-  }},
-  "escalation_triggers": [
-    {{
-      "condition": "If this happens",
-      "action": "Escalate to human"
-    }}
-  ],
-  "summary": "Plain-English summary of mitigation actions taken",
-  "next_review": "When to review and adjust actions"
+  "summary": "Recommend immediately blocking source IP EXACT_IP responsible for DDoS-DNS attack with 15,000 packets. Action will stop 95% of malicious traffic.",
+  "next_steps": "After blocking, monitor for attack migration to new IPs. Review logs in 1 hour to confirm effectiveness."
 }}
 
-Action guidelines:
-- Only execute actions approved by the Judge
-- Prioritize automated actions for immediate threats
-- Consider business impact and false positive risks
-- Provide clear rollback plans
-- Set up monitoring for action effectiveness
-- Escalate complex situations to humans
-- Document all actions for audit trails"""),
+MANDATORY ACTION GENERATION RULES:
+1. ALWAYS extract EXACT IP addresses, ports, packet counts from the provided nodes/edges data
+2. NEVER use placeholder IPs like "192.168.1.x" - use ACTUAL IPs from the data
+3. Generate SPECIFIC commands with real syntax (iptables, A10 aXAPI, Python)
+4. Calculate realistic effectiveness percentages based on attack severity
+5. Provide UNIQUE justifications for each action based on specific attack patterns detected
+6. Include exact packet counts, protocol numbers, and attack types from Detector/Investigator findings
+7. Make incident reports detailed enough for human analysts to act on
+8. Enable ALL 4 action buttons with specific, different strategies
+9. Use actual CIC DDoS attack types from the data (DrDoS_DNS, UDP-Flood, SYN-Flood, etc.)"""),
             ("human", """Execute mitigation actions based on the Judge's decision:
 
 JUDGE'S FINAL ASSESSMENT:

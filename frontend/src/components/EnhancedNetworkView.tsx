@@ -1555,36 +1555,32 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
 
               {/* Action Buttons - only show when analysis complete */}
               {attackedNodeAnalysis && !isAnalyzingNode && (
-                <div className="bg-slate-900 rounded-lg p-6 border border-slate-800">
-                  <h3 className="text-lg font-semibold text-white mb-4 uppercase tracking-wider">⚡ Take Action</h3>
-                  <div className="grid grid-cols-2 gap-4">
+                <div className="bg-black rounded-lg p-6 border border-slate-800">
+                  <h3 className="text-sm font-medium text-white mb-4 uppercase tracking-wider">Response Actions</h3>
+                  <div className="grid grid-cols-2 gap-3">
                     <button
                       onClick={() => executeAction('block_ip', attackedNodeAnalysis.result?.metadata?.target_node_id || '')}
-                      className="bg-red-600 hover:bg-red-700 text-white px-6 py-4 rounded-lg transition-colors flex items-center justify-center space-x-3 font-medium text-base"
+                      className="bg-red-600/90 hover:bg-red-600 text-white px-4 py-3 rounded transition-colors font-medium text-sm border border-red-700"
                     >
-                      <span className="text-xl">🚫</span>
-                      <span>Block IP</span>
+                      Block IP
                     </button>
                     <button
                       onClick={() => executeAction('throttle_traffic', attackedNodeAnalysis.result?.metadata?.target_node_id || '')}
-                      className="bg-yellow-600 hover:bg-yellow-700 text-white px-6 py-4 rounded-lg transition-colors flex items-center justify-center space-x-3 font-medium text-base"
+                      className="bg-amber-600/90 hover:bg-amber-600 text-white px-4 py-3 rounded transition-colors font-medium text-sm border border-amber-700"
                     >
-                      <span className="text-xl">⏳</span>
-                      <span>Throttle Traffic</span>
+                      Throttle Traffic
                     </button>
                     <button
                       onClick={() => executeAction('notify_dev', attackedNodeAnalysis.result?.metadata?.target_node_id || '')}
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-4 rounded-lg transition-colors flex items-center justify-center space-x-3 font-medium text-base"
+                      className="bg-blue-600/90 hover:bg-blue-600 text-white px-4 py-3 rounded transition-colors font-medium text-sm border border-blue-700"
                     >
-                      <span className="text-xl">📧</span>
-                      <span>Notify Dev Team</span>
+                      Notify Dev Team
                     </button>
                     <button
                       onClick={() => executeAction('ignore', attackedNodeAnalysis.result?.metadata?.target_node_id || '')}
-                      className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-4 rounded-lg transition-colors flex items-center justify-center space-x-3 font-medium text-base"
+                      className="bg-slate-700/90 hover:bg-slate-700 text-white px-4 py-3 rounded transition-colors font-medium text-sm border border-slate-600"
                     >
-                      <span className="text-xl">👁️</span>
-                      <span>Continue Monitoring</span>
+                      Continue Monitoring
                     </button>
                   </div>
                 </div>
