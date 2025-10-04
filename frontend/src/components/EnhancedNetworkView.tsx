@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 import { networkDataService, NetworkTrafficData, NetworkNode, NetworkEdge } from "@/services/networkDataService";
+import AgentReasoningTimeline from "./AgentReasoningTimeline";
 
 interface EnhancedNetworkViewProps {
   incidentId?: string;
@@ -500,15 +501,18 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
       };
       
       console.log(`Analyzing attacked node: ${node.ip} with ${relatedEdges.length} related edges`);
-      
-      // Call the backend API for focused analysis
-      const response = await fetch('http://localhost:8000/api/agents/process', {
+
+      // Use fetch with streaming for real-time agent updates
+      const response = await fetch('http://localhost:8000/api/agents/process/stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          data: focusedData,
+          data: {
+            nodes: focusedData.nodes,
+            edges: focusedData.edges
+          },
           context: {
             analysis_type: "attacked_node_focus",
             target_node_id: node.id,
@@ -516,10 +520,91 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
           }
         })
       });
-      
-      const result = await response.json();
-      setAttackedNodeAnalysis(result);
-      console.log('Attacked node analysis result:', result);
+
+      if (!response.ok || !response.body) {
+        throw new Error('Stream connection failed');
+      }
+
+      // Initialize result accumulator
+      const accumulatedResult: any = {
+        success: true,
+        agent_interactions: {
+          interactions: [],
+          total_interactions: 0,
+          completed_agents: [],
+          workflow_status: 'processing'
+        },
+        result: {},
+        confidence: 0,
+        explanation: ''
+      };
+
+      // Read the stream
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) {
+          setIsAnalyzingNode(false);
+          setCurrentAgent(null);
+          break;
+        }
+
+        // Decode chunk and add to buffer
+        buffer += decoder.decode(value, { stream: true });
+
+        // Process complete SSE messages
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = line.slice(6); // Remove 'data: ' prefix
+              const update = JSON.parse(data);
+              console.log('Agent stream update:', update);
+
+              if (update.type === 'agent_update') {
+                // Add new agent interaction
+                accumulatedResult.agent_interactions.interactions.push(update.interaction);
+                accumulatedResult.agent_interactions.total_interactions += 1;
+                accumulatedResult.agent_interactions.completed_agents = update.completed_agents;
+                accumulatedResult.agent_interactions.workflow_status = update.current_step;
+
+                // Update the UI in real-time
+                setAttackedNodeAnalysis({ ...accumulatedResult });
+
+              } else if (update.type === 'final_decision') {
+                // Set final decision
+                accumulatedResult.result = {
+                  decision: update.decision,
+                  metadata: update.metadata
+                };
+                accumulatedResult.confidence = update.confidence;
+                accumulatedResult.explanation = update.reasoning;
+                accumulatedResult.agent_interactions.workflow_status = 'completed';
+
+                // Final update
+                setAttackedNodeAnalysis({ ...accumulatedResult });
+
+              } else if (update.type === 'error') {
+                console.error('Agent stream error:', update.error);
+                accumulatedResult.success = false;
+                accumulatedResult.error = update.error;
+                accumulatedResult.agent_interactions.final_decision = update.final_decision;
+
+                setAttackedNodeAnalysis({ ...accumulatedResult });
+              }
+
+            } catch (err) {
+              console.error('Failed to parse stream update:', err, 'Line:', line);
+            }
+          }
+        }
+      }
       
     } catch (error) {
       console.error('Attacked node analysis failed:', error);
@@ -1142,7 +1227,7 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
         {/* Incident Metadata Panel */}
         {incidentMetadata && (
           <div className="bg-black/95 backdrop-blur-md rounded-xl p-6 border border-red-500/50 min-w-[300px]">
-            <h2 className="text-xl font-bold text-red-400 mb-4">🚨 Incident Details</h2>
+            <h2 className="text-xl font-bold text-red-400 mb-4">Incident Details</h2>
             <div className="space-y-3">
               <div className="flex justify-between items-center">
                 <span className="text-gray-500">Attack Type:</span>
@@ -1433,198 +1518,78 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
         </div>
       </div>
 
-      {/* Agent Status Panel - Enhanced with Reasoning */}
-      <div className="absolute top-4 right-4 bg-black/95 backdrop-blur-md text-white p-4 rounded-lg border border-blue-500/30 min-w-[400px] max-w-[500px] max-h-[80vh] overflow-y-auto">
-        <h3 className="text-lg font-bold mb-3">🤖 AI Agents</h3>
-        
-        {/* Agent Status Grid */}
-        <div className="space-y-2 mb-4">
-          {Object.entries(agentStatus).map(([agentName, status]) => (
-            <div key={agentName} className="flex items-center space-x-2">
-              <div className={`w-3 h-3 rounded-full ${
-                status.status === 'processing' ? 'bg-blue-400 animate-pulse' :
-                status.status === 'completed' ? 'bg-green-400' :
-                status.status === 'error' ? 'bg-red-400' : 'bg-gray-400'
-              }`} />
-              <span className="text-sm capitalize">{agentName}</span>
-              {status.status === 'processing' && (
-                <div className="flex-1 bg-gray-600 rounded-full h-2 ml-2">
-                  <div 
-                    className="bg-blue-400 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${status.progress}%` }}
-                  />
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* Processing Status */}
-        {(isAgentProcessing || isAnalyzingNode) && (
-          <div className="mb-4 p-3 bg-blue-900/30 rounded-lg border border-blue-500/30">
-            <div className="text-xs text-blue-300 font-medium mb-1">
-              🔄 {currentAgent || 'Multi-agent'} analyzing network...
-            </div>
-            <div className="text-xs text-blue-200">
-              {isAnalyzingNode ? 'Attacked node analysis in progress' : 'Multi-agent analysis in progress'}
-            </div>
-          </div>
-        )}
-
-        {/* Attacked Node Analysis Results */}
-        {attackedNodeAnalysis && attackedNodeAnalysis.success && (
-          <div className="space-y-3">
-            <div className="p-3 bg-slate-800/50 rounded-lg border border-slate-600/50">
-              <h4 className="text-sm font-bold text-red-300 mb-2">🚨 Attack Analysis</h4>
-              <div className="space-y-2 text-xs">
-                <div>
-                  <span className="text-slate-400">Decision:</span>
-                  <div className="text-white font-medium">{attackedNodeAnalysis.result?.decision || 'Unknown'}</div>
-                </div>
-                <div>
-                  <span className="text-slate-400">Confidence:</span>
-                  <div className="text-green-300 font-medium">
-                    {attackedNodeAnalysis.confidence ? (attackedNodeAnalysis.confidence * 100).toFixed(1) + '%' : 'Unknown'}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Detailed Agent Reasoning */}
-            <div className="p-3 bg-slate-800/50 rounded-lg border border-slate-600/50">
-              <h4 className="text-sm font-bold text-blue-300 mb-2">🔍 Agent Reasoning</h4>
-              <div className="text-xs text-slate-200 leading-relaxed">
-                {attackedNodeAnalysis.explanation || 'No detailed reasoning provided'}
-              </div>
-            </div>
-
-          </div>
-        )}
-
-        {/* General Agent Results */}
-        {agentResults && !attackedNodeAnalysis && (
-          <div className="mt-3 p-3 bg-green-900/30 rounded-lg border border-green-500/30">
-            <div className="font-bold text-green-300 text-xs">✅ Analysis Complete</div>
-            <div className="text-green-200 text-xs">Decision: {agentResults.result?.decision}</div>
-            <div className="text-green-200 text-xs">Confidence: {(agentResults.confidence * 100).toFixed(1)}%</div>
-          </div>
-        )}
-      </div>
-
-
       {/* Attacked Node Analysis Modal */}
       {showActionPanel && (
-        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-slate-900 border border-red-500/50 rounded-xl p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-2xl font-bold text-red-300">🚨 Attacked Node Analysis</h2>
+        <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="bg-black border border-slate-800 rounded-lg p-8 max-w-6xl w-full mx-8 max-h-[85vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-3xl font-semibold text-white">🚨 Attacked Node Analysis</h2>
               <button
                 onClick={() => setShowActionPanel(false)}
                 className="text-slate-400 hover:text-white transition-colors"
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
 
-            {isAnalyzingNode ? (
-              <div className="text-center py-8">
-                <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-                <p className="text-blue-300">🤖 AI Agents analyzing the attack...</p>
-                <div className="mt-4 space-y-2">
-                  {Object.entries(agentStatus).map(([agentName, status]) => (
-                    <div key={agentName} className="flex items-center space-x-2 text-sm">
-                      <div className={`w-2 h-2 rounded-full ${
-                        status.status === 'processing' ? 'bg-blue-400 animate-pulse' :
-                        status.status === 'completed' ? 'bg-green-400' : 'bg-gray-400'
-                      }`} />
-                      <span className="capitalize text-slate-300">{agentName}</span>
-                      {status.status === 'processing' && (
-                        <div className="flex-1 bg-gray-600 rounded-full h-1">
-                          <div 
-                            className="bg-blue-400 h-1 rounded-full transition-all duration-300"
-                            style={{ width: `${status.progress}%` }}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+            {/* Always show timeline - updates in real-time as agents complete */}
+            <div className="space-y-4">
+              {/* Agent Reasoning Timeline */}
+              <div className="bg-black rounded-lg p-4 border border-slate-900">
+                <AgentReasoningTimeline
+                  interactions={attackedNodeAnalysis?.agent_interactions?.interactions || []}
+                  finalDecision={
+                    attackedNodeAnalysis && !isAnalyzingNode
+                      ? {
+                          decision: attackedNodeAnalysis.result?.decision || 'Unknown',
+                          confidence: attackedNodeAnalysis.confidence || 0,
+                          reasoning: attackedNodeAnalysis.explanation || 'No reasoning provided'
+                        }
+                      : undefined
+                  }
+                  isLoading={isAnalyzingNode}
+                />
               </div>
-            ) : attackedNodeAnalysis ? (
-              <div className="space-y-4">
-                {/* Analysis Summary */}
-                <div className="bg-slate-800 rounded-lg p-4">
-                  <h3 className="text-lg font-semibold text-white mb-3">🔍 Agents Analysis Results</h3>
-                  
-                  <div className="grid grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <span className="text-slate-400 text-sm">Decision:</span>
-                      <div className="text-white font-medium">{attackedNodeAnalysis.result?.decision || 'Unknown'}</div>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 text-sm">Confidence:</span>
-                      <div className="text-green-300 font-medium">
-                        {attackedNodeAnalysis.confidence ? (attackedNodeAnalysis.confidence * 100).toFixed(1) + '%' : 'Unknown'}
-                      </div>
-                    </div>
-                  </div>
 
-                  <div className="mb-4">
-                    <span className="text-slate-400 text-sm">Reasoning:</span>
-                    <div className="text-slate-200 text-sm mt-1 bg-slate-700 p-3 rounded">
-                      {attackedNodeAnalysis.explanation || 'No reasoning provided'}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="bg-slate-800 rounded-lg p-4">
-                  <h3 className="text-lg font-semibold text-white mb-3">⚡ Take Action</h3>
-                  <div className="grid grid-cols-2 gap-3">
+              {/* Action Buttons - only show when analysis complete */}
+              {attackedNodeAnalysis && !isAnalyzingNode && (
+                <div className="bg-slate-900 rounded-lg p-6 border border-slate-800">
+                  <h3 className="text-lg font-semibold text-white mb-4 uppercase tracking-wider">⚡ Take Action</h3>
+                  <div className="grid grid-cols-2 gap-4">
                     <button
                       onClick={() => executeAction('block_ip', attackedNodeAnalysis.result?.metadata?.target_node_id || '')}
-                      className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center justify-center space-x-2"
+                      className="bg-red-600 hover:bg-red-700 text-white px-6 py-4 rounded-lg transition-colors flex items-center justify-center space-x-3 font-medium text-base"
                     >
-                      <span>🚫</span>
+                      <span className="text-xl">🚫</span>
                       <span>Block IP</span>
                     </button>
                     <button
                       onClick={() => executeAction('throttle_traffic', attackedNodeAnalysis.result?.metadata?.target_node_id || '')}
-                      className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center justify-center space-x-2"
+                      className="bg-yellow-600 hover:bg-yellow-700 text-white px-6 py-4 rounded-lg transition-colors flex items-center justify-center space-x-3 font-medium text-base"
                     >
-                      <span>⏳</span>
+                      <span className="text-xl">⏳</span>
                       <span>Throttle Traffic</span>
                     </button>
                     <button
                       onClick={() => executeAction('notify_dev', attackedNodeAnalysis.result?.metadata?.target_node_id || '')}
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center justify-center space-x-2"
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-4 rounded-lg transition-colors flex items-center justify-center space-x-3 font-medium text-base"
                     >
-                      <span>📧</span>
+                      <span className="text-xl">📧</span>
                       <span>Notify Dev Team</span>
                     </button>
                     <button
                       onClick={() => executeAction('ignore', attackedNodeAnalysis.result?.metadata?.target_node_id || '')}
-                      className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center justify-center space-x-2"
+                      className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-4 rounded-lg transition-colors flex items-center justify-center space-x-3 font-medium text-base"
                     >
-                      <span>👁️</span>
+                      <span className="text-xl">👁️</span>
                       <span>Continue Monitoring</span>
                     </button>
                   </div>
                 </div>
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <p className="text-slate-300">Failed to analyze the attacked node.</p>
-                <button
-                  onClick={() => setShowActionPanel(false)}
-                  className="mt-4 bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded-lg transition-colors"
-                >
-                  Close
-                </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       )}
