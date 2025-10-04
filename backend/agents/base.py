@@ -35,6 +35,12 @@ class AgentDecision(BaseModel):
     metadata: Dict[str, Any] = {}
     timestamp: Optional[str] = None
 
+    # Enhanced transparency fields
+    llm_prompt: Optional[str] = None  # The prompt sent to the LLM
+    llm_response: Optional[str] = None  # The raw response from LLM
+    intermediate_steps: List[Dict[str, Any]] = []  # Step-by-step reasoning
+    processing_time_ms: Optional[float] = None  # How long this agent took
+
 
 class AgentInput(BaseModel):
     """Base input structure for agents"""

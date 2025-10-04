@@ -167,7 +167,7 @@ class AgentWorkflow:
     async def _orchestrator_node(self, state: AgentState) -> AgentState:
         """
         Orchestrator agent node - Rule-based coordination and routing
-        
+
         Responsibilities:
         1. Analyze incoming network traffic data
         2. Determine threat level and priority
@@ -175,6 +175,9 @@ class AgentWorkflow:
         4. Enrich context for downstream agents
         5. Handle edge cases and data validation
         """
+        import time
+        start_time = time.time()
+
         input_data = state["input_data"]
         
         # Initialize analysis metrics
@@ -351,7 +354,19 @@ class AgentWorkflow:
         elif total_nodes < 5:
             confidence = 0.8  # Good confidence but few nodes
         
-        # Create orchestrator decision
+        # Calculate processing time
+        processing_time = (time.time() - start_time) * 1000  # Convert to ms
+
+        # Build intermediate steps for transparency
+        intermediate_steps = [
+            {"step": "Received network traffic data", "details": f"{total_nodes} nodes, {total_edges} edges"},
+            {"step": "Analyzed traffic patterns", "details": f"{attack_count} attacks, {suspicious_count} suspicious, {normal_count} normal"},
+            {"step": "Calculated threat metrics", "details": f"Threat ratio: {round(threat_ratio * 100, 1)}%"},
+            {"step": "Determined threat level", "details": f"{threat_level} with {priority} priority"},
+            {"step": "Selected workflow mode", "details": f"Routing to {workflow_mode}"}
+        ]
+
+        # Create orchestrator decision with transparency
         state["orchestrator_decision"] = AgentDecision(
             agent_id="orchestrator",
             decision=f"route_workflow_{workflow_mode}",
@@ -371,7 +386,11 @@ class AgentWorkflow:
                     "suspicious_count": suspicious_count,
                     "attack_types": attack_types
                 }
-            }
+            },
+            llm_prompt=f"Coordinating analysis of {total_nodes} nodes and {total_edges} edges with {attack_count} detected attacks",
+            llm_response=f"Threat Level: {threat_level}, Workflow: {workflow_mode}",
+            intermediate_steps=intermediate_steps,
+            processing_time_ms=processing_time
         )
         
         # Update state
@@ -385,13 +404,16 @@ class AgentWorkflow:
     async def _detector_node(self, state: AgentState) -> AgentState:
         """
         Detector agent node - LLM-powered threat detection using GPT-4o-mini
-        
+
         Responsibilities:
         1. Identify suspicious network activity in real-time
         2. Analyze network traffic using heavy-hitter detection and graph anomaly algorithms
         3. Flag abnormal IPs, ports, or traffic clusters
         4. Generate confidence scores for potential attacks
         """
+        import time
+        start_time = time.time()
+
         input_data = state["input_data"]
         context = state.get("context", {})
         orchestrator_analysis = context.get("orchestrator_analysis", {})
@@ -456,12 +478,12 @@ You must generate a JSON response with:
         "Bandwidth consumption of 1.5MB/s",
         "Source IP 172.16.0.5 targeting port 53"
       ],
-      "quantitative_analysis": {
+      "quantitative_analysis": {{
         "packet_count": "exact packet count from NetFlow",
         "protocol": "exact protocol number",
         "bandwidth": "exact bytes transferred",
         "baseline_comparison": "percentage above normal"
-      }
+      }}
     }}
   ],
   "heavy_hitters": [
@@ -540,10 +562,10 @@ MANDATORY: You MUST extract and reference EXACT NetFlow metrics from the provide
    - Calculate exact percentages above baseline
 
 3. PROVIDE QUANTITATIVE ANALYSIS WITH EXACT NUMBERS:
-   - "UDP protocol (17) with {{EXACT PACKET COUNT}} packets from {{EXACT SOURCE IP}} targeting port {{EXACT PORT}}"
-   - "Packet volume exceeds baseline by {{EXACT PERCENTAGE}}% ({{EXACT COUNT}} vs 1000 normal)"
-   - "Bandwidth consumption of {{EXACT MB/s}}MB/s indicates high-volume attack"
-   - "Attack pattern matches CIC {{EXACT ATTACK TYPE}} signature"
+   - "UDP protocol (17) with [EXACT PACKET COUNT] packets from [EXACT SOURCE IP] targeting port [EXACT PORT]"
+   - "Packet volume exceeds baseline by [EXACT PERCENTAGE]% ([EXACT COUNT] vs 1000 normal)"
+   - "Bandwidth consumption of [EXACT MB/s]MB/s indicates high-volume attack"
+   - "Attack pattern matches CIC [EXACT ATTACK TYPE] signature"
 
 4. MAKE EACH ANALYSIS UNIQUE FOR THE SPECIFIC NODE:
    - Reference the specific node ID being analyzed
@@ -553,19 +575,23 @@ MANDATORY: You MUST extract and reference EXACT NetFlow metrics from the provide
 
 Detect threats with SPECIFIC NetFlow data points and quantitative analysis.""")
         ])
-        
+
+        # Prepare the prompt for transparency
+        prompt_input = {
+            "orchestrator_analysis": json.dumps(orchestrator_analysis, indent=2),
+            "nodes": json.dumps(input_data.get("nodes", []), indent=2),
+            "edges": json.dumps(input_data.get("edges", []), indent=2)
+        }
+
         # Invoke LLM
         try:
             chain = prompt | llm
-            response = await chain.ainvoke({
-                "orchestrator_analysis": json.dumps(orchestrator_analysis, indent=2),
-                "nodes": json.dumps(input_data.get("nodes", []), indent=2),
-                "edges": json.dumps(input_data.get("edges", []), indent=2)
-            })
-            
+            response = await chain.ainvoke(prompt_input)
+
             # Parse LLM response
             llm_output = response.content
-            
+            llm_prompt_text = f"Analyzing {len(input_data.get('nodes', []))} nodes and {len(input_data.get('edges', []))} edges for threat detection"
+
             # Extract JSON from response (handle markdown code blocks)
             if "```json" in llm_output:
                 llm_output = llm_output.split("```json")[1].split("```")[0].strip()
@@ -617,7 +643,10 @@ Detect threats with SPECIFIC NetFlow data points and quantitative analysis.""")
             decision = "detection_error"
             confidence = 0.3
         
-        # Create detector decision
+        # Calculate processing time
+        processing_time = (time.time() - start_time) * 1000  # Convert to ms
+
+        # Create detector decision with transparency fields
         state["detector_decision"] = AgentDecision(
             agent_id="detector",
             decision=decision,
@@ -631,7 +660,15 @@ Detect threats with SPECIFIC NetFlow data points and quantitative analysis.""")
                 "overall_assessment": overall_assessment,
                 "llm_model": config.fast_model,
                 "llm_powered": True
-            }
+            },
+            llm_prompt=llm_prompt_text,
+            llm_response=summary,
+            intermediate_steps=[
+                {"step": "Received data from Orchestrator", "details": f"Threat level: {orchestrator_analysis.get('threat_level', 'UNKNOWN')}"},
+                {"step": "Analyzed network traffic", "details": f"Found {len(threats_detected)} threats"},
+                {"step": "Generated threat assessment", "details": f"Confidence: {confidence}"}
+            ],
+            processing_time_ms=processing_time
         )
         
         # Update state
@@ -643,7 +680,7 @@ Detect threats with SPECIFIC NetFlow data points and quantitative analysis.""")
     async def _investigator_node(self, state: AgentState) -> AgentState:
         """
         Investigator agent node - LLM-powered deep analysis using fast model
-        
+
         Responsibilities:
         1. Perform deep analysis on flagged network activity from Detector
         2. Inspect suspicious nodes and edges identified by Detector
@@ -651,6 +688,9 @@ Detect threats with SPECIFIC NetFlow data points and quantitative analysis.""")
         4. Provide detailed reports for mitigation and monitoring agents
         5. Communicate with Detector agent findings
         """
+        import time
+        start_time = time.time()
+
         input_data = state["input_data"]
         context = state.get("context", {})
         orchestrator_analysis = context.get("orchestrator_analysis", {})
@@ -851,10 +891,10 @@ MANDATORY: You MUST extract and reference EXACT NetFlow metrics from the provide
    - Assess attack duration from timestamps
 
 3. PROVIDE QUANTITATIVE ANALYSIS WITH EXACT NUMBERS:
-   - "UDP protocol (17) with {{EXACT PACKET COUNT}} packets from {{EXACT SOURCE IP}} targeting port {{EXACT PORT}}"
-   - "Packet volume exceeds baseline by {{EXACT PERCENTAGE}}% ({{EXACT COUNT}} vs 1000 normal)"
-   - "Bandwidth consumption of {{EXACT MB/s}}MB/s indicates high-volume attack"
-   - "Attack pattern matches CIC {{EXACT ATTACK TYPE}} signature with {{EXACT CONFIDENCE}}% confidence"
+   - "UDP protocol (17) with [EXACT PACKET COUNT] packets from [EXACT SOURCE IP] targeting port [EXACT PORT]"
+   - "Packet volume exceeds baseline by [EXACT PERCENTAGE]% ([EXACT COUNT] vs 1000 normal)"
+   - "Bandwidth consumption of [EXACT MB/s]MB/s indicates high-volume attack"
+   - "Attack pattern matches CIC [EXACT ATTACK TYPE] signature with [EXACT CONFIDENCE]% confidence"
 
 4. REFERENCE SPECIFIC CIC DATASET ATTACK TYPES:
    - DrDoS_DNS, SYN-Flood, UDP-Flood, Port-Scan, etc.
@@ -954,7 +994,18 @@ Conduct comprehensive NetFlow-based investigation and return a detailed JSON for
             decision = "investigation_error"
             confidence = 0.3
         
-        # Create investigator decision
+        # Calculate processing time
+        processing_time = (time.time() - start_time) * 1000
+
+        # Build intermediate steps
+        intermediate_steps = [
+            {"step": "Received Detector findings", "details": f"{len(detector_metadata.get('threats_detected', []))} threats flagged"},
+            {"step": "Analyzed attack patterns", "details": f"{len(investigations)} investigations conducted"},
+            {"step": "Performed forensic analysis", "details": f"{len(node_forensics)} nodes analyzed"},
+            {"step": "Generated assessment", "details": f"Priority: {overall_assessment.get('recommended_priority', 'unknown')}"}
+        ]
+
+        # Create investigator decision with transparency
         state["investigator_decision"] = AgentDecision(
             agent_id="investigator",
             decision=decision,
@@ -974,7 +1025,11 @@ Conduct comprehensive NetFlow-based investigation and return a detailed JSON for
                 },
                 "llm_model": config.fast_model,
                 "llm_powered": True
-            }
+            },
+            llm_prompt=f"Deep investigation of {len(detector_metadata.get('threats_detected', []))} flagged threats",
+            llm_response=technical_summary,
+            intermediate_steps=intermediate_steps,
+            processing_time_ms=processing_time
         )
         
         # Update state
@@ -986,13 +1041,16 @@ Conduct comprehensive NetFlow-based investigation and return a detailed JSON for
     async def _monitor_node(self, state: AgentState) -> AgentState:
         """
         Monitor agent node - LLM-powered monitoring and log summarization using fast model
-        
+
         Responsibilities:
         1. Translate logs and events into plain-English summaries using AI
         2. Highlight trends, critical nodes, and abnormal traffic patterns
         3. Generate structured logs for frontend visualization
         4. Track network health metrics over time
         """
+        import time
+        start_time = time.time()
+
         input_data = state["input_data"]
         context = state.get("context", {})
         orchestrator_analysis = context.get("orchestrator_analysis", {})
@@ -1020,22 +1078,22 @@ You must generate a JSON response with:
 5. health_score: Integer 0-100
 
 Log entry structure:
-{{
-  "timestamp": "ISO 8601 timestamp",
-  "level": "INFO" | "WARNING" | "CRITICAL",
-  "category": "system" | "threat_detection" | "ddos" | "apt" | "attack_pattern" | "node_status" | "health",
-  "message": "Human-readable message with emojis",
+```
+  "timestamp": "ISO 8601 timestamp"
+  "level": "INFO" | "WARNING" | "CRITICAL"
+  "category": "system" | "threat_detection" | "ddos" | "apt" | "attack_pattern" | "node_status" | "health"
+  "message": "Human-readable message with emojis"
   "details": {{}}
-}}
+```
 
 Dashboard structure:
-{{
-  "network_health": {{"score": 0-100, "status": "...", "threat_level": "..."}},
-  "traffic_statistics": {{"total_nodes": int, "total_edges": int, ...}},
-  "attack_metrics": {{"total_attacks": int, "attack_types": {{}}, "ddos_detected": bool, "apt_detected": bool}},
-  "critical_nodes": {{"most_targeted": [...], "most_attacking": [...], "attacked_list": [...]}},
+```
+  "network_health": {{"score": 0-100, "status": "...", "threat_level": "..."}}
+  "traffic_statistics": {{"total_nodes": int, "total_edges": int, ...}}
+  "attack_metrics": {{"total_attacks": int, "attack_types": {{}}, "ddos_detected": bool, "apt_detected": bool}}
+  "critical_nodes": {{"most_targeted": [...], "most_attacking": [...], "attacked_list": [...]}}
   "trends": {{"threat_increasing": bool, "primary_attack_vector": str, "health_trend": "..."}}
-}}
+```
 
 Rules:
 - Use emojis in messages (✅, ⚠️, 🚨, 🔴, 🟡, 🎯, 📊)
@@ -1121,7 +1179,17 @@ Generate a comprehensive JSON monitoring report.""")
             health_score = 50
             confidence = 0.3
         
-        # Create monitor decision
+        # Calculate processing time
+        processing_time = (time.time() - start_time) * 1000
+
+        # Build intermediate steps
+        intermediate_steps = [
+            {"step": "Analyzed network health", "details": f"Status: {network_status}, Score: {health_score}"},
+            {"step": "Generated monitoring logs", "details": f"{len(logs)} log entries created"},
+            {"step": "Assessed trends", "details": f"Health assessment complete"}
+        ]
+
+        # Create monitor decision with transparency
         state["monitor_decision"] = AgentDecision(
             agent_id="monitor",
             decision=f"monitoring_{network_status}",
@@ -1134,7 +1202,11 @@ Generate a comprehensive JSON monitoring report.""")
                 "network_status": network_status,
                 "health_score": health_score,
                 "llm_powered": True
-            }
+            },
+            llm_prompt=f"Monitoring network with {len(input_data.get('nodes', []))} nodes",
+            llm_response=summary,
+            intermediate_steps=intermediate_steps,
+            processing_time_ms=processing_time
         )
         
         # Update state
@@ -1151,13 +1223,16 @@ Generate a comprehensive JSON monitoring report.""")
     async def _judge_node(self, state: AgentState) -> AgentState:
         """
         Judge agent node - LLM-powered decision arbitration using fast model
-        
+
         Responsibilities:
         1. Aggregate findings from Detector, Investigator, and Monitor
         2. Evaluate conflicting information and make final decisions
         3. Assign confidence and risk scores
         4. Provide reasoning in plain English for security teams
         """
+        import time
+        start_time = time.time()
+
         input_data = state["input_data"]
         context = state.get("context", {})
         
@@ -1279,10 +1354,10 @@ CRITICAL REQUIREMENTS - PROVIDE SPECIFIC NETFLOW ANALYSIS:
 MANDATORY: You MUST extract and reference EXACT NetFlow metrics from the provided data. Do NOT use generic language.
 
 1. EXTRACT AND REFERENCE EXACT NETFLOW METRICS:
-   - "UDP protocol (17) with {{EXACT PACKET COUNT}} packets from source IP {{EXACT SOURCE IP}} targeting port {{EXACT PORT}}"
-   - "Packet volume exceeds baseline by {{EXACT PERCENTAGE}}% ({{EXACT COUNT}} vs 1000 normal packets)"
-   - "Bandwidth consumption of {{EXACT MB/s}}MB/s indicates high-volume attack"
-   - "Attack pattern matches CIC {{EXACT ATTACK TYPE}} signature with {{EXACT CONFIDENCE}}% confidence"
+   - "UDP protocol (17) with [EXACT PACKET COUNT] packets from source IP [EXACT SOURCE IP] targeting port [EXACT PORT]"
+   - "Packet volume exceeds baseline by [EXACT PERCENTAGE]% ([EXACT COUNT] vs 1000 normal packets)"
+   - "Bandwidth consumption of [EXACT MB/s]MB/s indicates high-volume attack"
+   - "Attack pattern matches CIC [EXACT ATTACK TYPE] signature with [EXACT CONFIDENCE]% confidence"
 
 2. CALCULATE AND EXPLAIN SEVERITY METRICS:
    - Critical: >10,000 packets, >1MB/s bandwidth, coordinated attack IPs
@@ -1291,10 +1366,10 @@ MANDATORY: You MUST extract and reference EXACT NetFlow metrics from the provide
    - Low: <1,000 packets, <100KB/s bandwidth
 
 3. PROVIDE QUANTITATIVE REASONING WITH EXACT NUMBERS:
-   - "NetFlow analysis reveals {{EXACT PROTOCOL}} with {{EXACT PACKET COUNT}} packets from {{EXACT SOURCE IP}} targeting {{EXACT PORT}}"
-   - "Packet volume exceeds normal baseline by {{EXACT PERCENTAGE}}%"
-   - "Bandwidth consumption of {{EXACT MB/s}}MB/s indicates {{EXACT ATTACK TYPE}}"
-   - "Investigator confirmed this pattern matches known {{EXACT CIC ATTACK TYPE}} signatures"
+   - "NetFlow analysis reveals [EXACT PROTOCOL] with [EXACT PACKET COUNT] packets from [EXACT SOURCE IP] targeting [EXACT PORT]"
+   - "Packet volume exceeds normal baseline by [EXACT PERCENTAGE]%"
+   - "Bandwidth consumption of [EXACT MB/s]MB/s indicates [EXACT ATTACK TYPE]"
+   - "Investigator confirmed this pattern matches known [EXACT CIC ATTACK TYPE] signatures"
 
 4. REFERENCE SPECIFIC CIC DATASET ATTACK TYPES:
    - DrDoS_DNS, SYN-Flood, UDP-Flood, Port-Scan, etc.
@@ -1397,7 +1472,18 @@ Provide final judgment with SPECIFIC NetFlow data points and quantitative analys
             decision = "judgment_error"
             confidence = 0.3
         
-        # Create judge decision
+        # Calculate processing time
+        processing_time = (time.time() - start_time) * 1000
+
+        # Build intermediate steps
+        intermediate_steps = [
+            {"step": "Received input from all agents", "details": f"Orchestrator, Detector, Investigator, Monitor"},
+            {"step": "Aggregated findings", "details": f"Threat level: {final_assessment.get('threat_level', 'UNKNOWN')}"},
+            {"step": "Resolved conflicts", "details": f"{len(conflict_resolution)} conflicts addressed"},
+            {"step": "Made final decision", "details": f"Confidence: {confidence}"}
+        ]
+
+        # Create judge decision with transparency
         state["judge_decision"] = AgentDecision(
             agent_id="judge",
             decision=decision,
@@ -1412,7 +1498,11 @@ Provide final judgment with SPECIFIC NetFlow data points and quantitative analys
                 "next_steps": next_steps,
                 "llm_model": config.fast_model,
                 "llm_powered": True
-            }
+            },
+            llm_prompt=f"Making final decision based on {len([d for d in [orchestrator_decision, detector_decision, investigator_decision, monitor_decision] if d])} agent inputs",
+            llm_response=reasoning,
+            intermediate_steps=intermediate_steps,
+            processing_time_ms=processing_time
         )
         
         # Set final decision in judge node (before routing)
@@ -1425,13 +1515,16 @@ Provide final judgment with SPECIFIC NetFlow data points and quantitative analys
     async def _mitigator_node(self, state: AgentState) -> AgentState:
         """
         Mitigator agent node - LLM-powered automated response using fast model
-        
+
         Responsibilities:
         1. Execute mitigation actions based on Judge's decisions
         2. Apply automated responses (block IPs, throttle traffic, etc.)
         3. Track effectiveness of mitigation actions
         4. Provide detailed action logs and results
         """
+        import time
+        start_time = time.time()
+
         input_data = state["input_data"]
         context = state.get("context", {})
         
@@ -1587,7 +1680,17 @@ Execute appropriate mitigation actions and return detailed results.""")
             decision = "mitigation_error"
             confidence = 0.3
         
-        # Create mitigator decision
+        # Calculate processing time
+        processing_time = (time.time() - start_time) * 1000
+
+        # Build intermediate steps
+        intermediate_steps = [
+            {"step": "Received Judge's decision", "details": f"Actions approved: {len(mitigation_actions)}"},
+            {"step": "Planned mitigation actions", "details": f"{len([a for a in mitigation_actions if a.get('automated', False)])} automated actions"},
+            {"step": "Assessed effectiveness", "details": f"Predicted threat reduction: {effectiveness_prediction.get('threat_reduction', 0)}%"}
+        ]
+
+        # Create mitigator decision with transparency
         state["mitigator_decision"] = AgentDecision(
             agent_id="mitigator",
             decision=decision,
@@ -1602,14 +1705,18 @@ Execute appropriate mitigation actions and return detailed results.""")
                 "next_review": next_review,
                 "llm_model": config.fast_model,
                 "llm_powered": True
-            }
+            },
+            llm_prompt=f"Planning mitigation for {len(mitigation_actions)} recommended actions",
+            llm_response=summary,
+            intermediate_steps=intermediate_steps,
+            processing_time_ms=processing_time
         )
-        
-        # Set final decision
-        state["final_decision"] = state["mitigator_decision"]
+
+        # DON'T override final decision - Judge has already set it
+        # Mitigator only executes what Judge decided
         state["current_step"] = "mitigator"
         state["completed_agents"] = state.get("completed_agents", []) + ["mitigator"]
-        
+
         return state
     
     async def run(self, input_data: Dict[str, Any], context: Dict[str, Any] = None) -> AgentState:
@@ -1630,16 +1737,168 @@ Execute appropriate mitigation actions and return detailed results.""")
             explanation="",
             confidence_score=0.0
         )
-        
+
         # Run the workflow with configuration
         config = {"configurable": {"thread_id": "agent_session_1"}}
         result = await self.graph.ainvoke(initial_state, config=config)
         return result
+
+    async def run_streaming(self, input_data: Dict[str, Any], context: Dict[str, Any] = None):
+        """
+        Run the agent workflow and stream updates after each agent completes
+
+        This generator yields agent interaction updates in real-time
+        """
+        initial_state = AgentState(
+            input_data=input_data,
+            context=context or {},
+            orchestrator_decision=None,
+            detector_decision=None,
+            investigator_decision=None,
+            monitor_decision=None,
+            judge_decision=None,
+            mitigator_decision=None,
+            current_step="",
+            completed_agents=[],
+            should_continue=True,
+            final_decision=None,
+            explanation="",
+            confidence_score=0.0
+        )
+
+        # Run the workflow with streaming using astream
+        config = {"configurable": {"thread_id": f"agent_session_streaming_{id(initial_state)}"}}
+
+        async for chunk in self.graph.astream(initial_state, config=config):
+            # Each chunk contains the state after a node execution
+            # The chunk is a dict with node name as key and state as value
+            for node_name, state in chunk.items():
+                if not isinstance(state, dict):
+                    continue
+
+                # Get the decision for the node that just completed
+                decision_key = f"{node_name}_decision"
+                decision = state.get(decision_key)
+
+                if decision:
+                    # Create agent interaction for this completed agent
+                    interaction = self._create_agent_interaction(node_name, decision)
+
+                    yield {
+                        "type": "agent_update",
+                        "agent": node_name,
+                        "interaction": interaction,
+                        "completed_agents": state.get("completed_agents", []),
+                        "current_step": state.get("current_step", node_name)
+                    }
+
+        # After workflow completes, send final decision
+        # Note: We need to track the final state from the last chunk
+        # The final_decision is set by the Judge node
+        # We'll send it as part of the judge's agent_update instead
+
+    def _create_agent_interaction(self, agent_name: str, decision) -> Dict[str, Any]:
+        """Helper to create agent interaction dict from decision"""
+        # Map node names to display names
+        display_names = {
+            "orchestrator": "Orchestrator",
+            "detector": "Detector",
+            "investigator": "Investigator",
+            "monitor": "Monitor",
+            "judge": "Judge",
+            "mitigator": "Mitigator"
+        }
+
+        # Map node names to actions
+        actions = {
+            "orchestrator": "Network traffic analysis and routing",
+            "detector": "Threat detection and analysis",
+            "investigator": "Deep forensic investigation",
+            "monitor": "Network health monitoring",
+            "judge": "Final security decision",
+            "mitigator": "Mitigation actions execution"
+        }
+
+        return {
+            "agent": display_names.get(agent_name, agent_name.title()),
+            "timestamp": decision.timestamp or datetime.now().isoformat(),
+            "action": actions.get(agent_name, "Processing"),
+            "summary": decision.reasoning,
+            "confidence": decision.confidence,
+            "status": "completed",
+            "details": self._extract_agent_details(agent_name, decision),
+            "llm_prompt": decision.llm_prompt,
+            "llm_response": decision.llm_response,
+            "intermediate_steps": decision.intermediate_steps,
+            "processing_time_ms": decision.processing_time_ms
+        }
+
+    def _extract_agent_details(self, agent_name: str, decision) -> Dict[str, Any]:
+        """Extract relevant details from agent decision metadata"""
+        metadata = decision.metadata or {}
+
+        if agent_name == "orchestrator":
+            return {
+                "threat_level": metadata.get("threat_level", "UNKNOWN"),
+                "workflow_mode": metadata.get("workflow_mode", "unknown"),
+                "total_attacks": metadata.get("statistics", {}).get("attack_count", 0)
+            }
+        elif agent_name == "detector":
+            return {
+                "threats_detected": len(metadata.get("threats_detected", [])),
+                "flagged_ips": len(metadata.get("flagged_ips", [])),
+                "heavy_hitters": len(metadata.get("heavy_hitters", [])),
+                "recommended_action": metadata.get("overall_assessment", {}).get("recommended_action", "none")
+            }
+        elif agent_name == "investigator":
+            return {
+                "investigations_count": len(metadata.get("investigations", [])),
+                "attack_campaigns": len(metadata.get("attack_campaigns", [])),
+                "requires_immediate_action": metadata.get("overall_assessment", {}).get("requires_immediate_action", False),
+                "coordinated_attack": metadata.get("overall_assessment", {}).get("coordinated_attack", False)
+            }
+        elif agent_name == "monitor":
+            return {
+                "network_status": metadata.get("network_status", "unknown"),
+                "health_score": metadata.get("health_score", 50),
+                "logs_generated": len(metadata.get("logs", []))
+            }
+        elif agent_name == "judge":
+            return {
+                "final_threat_level": metadata.get("final_assessment", {}).get("threat_level", "UNKNOWN"),
+                "requires_immediate_action": metadata.get("final_assessment", {}).get("requires_immediate_action", False),
+                "automated_response_approved": metadata.get("final_assessment", {}).get("automated_response_approved", False),
+                "human_intervention_required": metadata.get("final_assessment", {}).get("human_intervention_required", False)
+            }
+        elif agent_name == "mitigator":
+            actions = metadata.get("mitigation_actions", [])
+            return {
+                "actions_executed": len(actions),
+                "automated_actions": len([a for a in actions if a.get("automated", False)]),
+                "effectiveness_prediction": metadata.get("effectiveness_prediction", {}).get("threat_reduction", 0)
+            }
+
+        return {}
     
     def get_agent_interactions_summary(self, state: AgentState) -> Dict[str, Any]:
         """Generate a summary of agent interactions for UI display"""
+        # Defensive check: ensure state is a dict-like object
+        if not isinstance(state, dict):
+            print(f"⚠️ WARNING: state is not a dict, it's a {type(state)}")
+            return {
+                "total_interactions": 0,
+                "workflow_status": "error",
+                "completed_agents": [],
+                "interactions": [],
+                "final_decision": {
+                    "decision": "error",
+                    "confidence": 0,
+                    "reasoning": "Invalid state object received"
+                }
+            }
+
         interactions = []
-        
+
         # Orchestrator interaction
         if state.get("orchestrator_decision"):
             decision = state["orchestrator_decision"]
@@ -1654,7 +1913,11 @@ Execute appropriate mitigation actions and return detailed results.""")
                     "threat_level": decision.metadata.get("threat_level", "UNKNOWN"),
                     "workflow_mode": decision.metadata.get("workflow_mode", "unknown"),
                     "total_attacks": decision.metadata.get("statistics", {}).get("attack_count", 0)
-                }
+                },
+                "llm_prompt": decision.llm_prompt,
+                "llm_response": decision.llm_response,
+                "intermediate_steps": decision.intermediate_steps,
+                "processing_time_ms": decision.processing_time_ms
             })
         
         # Detector interaction
@@ -1673,7 +1936,11 @@ Execute appropriate mitigation actions and return detailed results.""")
                     "flagged_ips": len(decision.metadata.get("flagged_ips", [])),
                     "heavy_hitters": len(decision.metadata.get("heavy_hitters", [])),
                     "recommended_action": decision.metadata.get("overall_assessment", {}).get("recommended_action", "none")
-                }
+                },
+                "llm_prompt": decision.llm_prompt,
+                "llm_response": decision.llm_response,
+                "intermediate_steps": decision.intermediate_steps,
+                "processing_time_ms": decision.processing_time_ms
             })
         
         # Investigator interaction
@@ -1692,7 +1959,11 @@ Execute appropriate mitigation actions and return detailed results.""")
                     "attack_campaigns": len(decision.metadata.get("attack_campaigns", [])),
                     "requires_immediate_action": decision.metadata.get("overall_assessment", {}).get("requires_immediate_action", False),
                     "coordinated_attack": decision.metadata.get("overall_assessment", {}).get("coordinated_attack", False)
-                }
+                },
+                "llm_prompt": decision.llm_prompt,
+                "llm_response": decision.llm_response,
+                "intermediate_steps": decision.intermediate_steps,
+                "processing_time_ms": decision.processing_time_ms
             })
         
         # Monitor interaction
@@ -1709,9 +1980,13 @@ Execute appropriate mitigation actions and return detailed results.""")
                     "network_status": decision.metadata.get("network_status", "unknown"),
                     "health_score": decision.metadata.get("health_score", 50),
                     "logs_generated": len(decision.metadata.get("logs", []))
-                }
+                },
+                "llm_prompt": decision.llm_prompt,
+                "llm_response": decision.llm_response,
+                "intermediate_steps": decision.intermediate_steps,
+                "processing_time_ms": decision.processing_time_ms
             })
-        
+
         # Judge interaction
         if state.get("judge_decision"):
             decision = state["judge_decision"]
@@ -1727,9 +2002,13 @@ Execute appropriate mitigation actions and return detailed results.""")
                     "requires_immediate_action": decision.metadata.get("final_assessment", {}).get("requires_immediate_action", False),
                     "automated_response_approved": decision.metadata.get("final_assessment", {}).get("automated_response_approved", False),
                     "human_intervention_required": decision.metadata.get("final_assessment", {}).get("human_intervention_required", False)
-                }
+                },
+                "llm_prompt": decision.llm_prompt,
+                "llm_response": decision.llm_response,
+                "intermediate_steps": decision.intermediate_steps,
+                "processing_time_ms": decision.processing_time_ms
             })
-        
+
         # Mitigator interaction
         if state.get("mitigator_decision"):
             decision = state["mitigator_decision"]
@@ -1745,17 +2024,24 @@ Execute appropriate mitigation actions and return detailed results.""")
                     "actions_executed": actions_count,
                     "automated_actions": len([a for a in decision.metadata.get("mitigation_actions", []) if a.get("automated", False)]),
                     "effectiveness_prediction": decision.metadata.get("effectiveness_prediction", {}).get("threat_reduction", 0)
-                }
+                },
+                "llm_prompt": decision.llm_prompt,
+                "llm_response": decision.llm_response,
+                "intermediate_steps": decision.intermediate_steps,
+                "processing_time_ms": decision.processing_time_ms
             })
         
+        # Get final decision (it's an AgentDecision object, not a dict)
+        final_decision = state.get("final_decision")
+
         return {
             "total_interactions": len(interactions),
             "workflow_status": state.get("current_step", "unknown"),
             "completed_agents": state.get("completed_agents", []),
             "interactions": interactions,
             "final_decision": {
-                "decision": state.get("final_decision", {}).get("decision", "pending") if state.get("final_decision") else "pending",
-                "confidence": state.get("final_decision", {}).get("confidence", 0) if state.get("final_decision") else 0,
-                "reasoning": state.get("final_decision", {}).get("reasoning", "No final decision yet") if state.get("final_decision") else "No final decision yet"
+                "decision": final_decision.decision if final_decision else "pending",
+                "confidence": final_decision.confidence if final_decision else 0,
+                "reasoning": final_decision.reasoning if final_decision else "No final decision yet"
             }
         }

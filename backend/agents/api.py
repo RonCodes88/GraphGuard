@@ -2,8 +2,11 @@
 AI Agent System API endpoints
 """
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from typing import Dict, Any
 from pydantic import BaseModel
+import json
+import asyncio
 
 from agents.workflow import AgentWorkflow, AgentState
 
@@ -29,12 +32,67 @@ class AgentResponse(BaseModel):
     error: str = None
 
 
-@router.post("/process", response_model=AgentResponse)
+@router.post("/process/stream")
+async def process_with_agents_stream(request: AgentRequest):
+    """
+    Stream agent processing results in real-time using Server-Sent Events
+
+    This endpoint streams updates as each agent completes its analysis
+    """
+    async def generate_agent_stream():
+        try:
+            # Debug: Log the NetFlow data received by agents
+            print("=== AGENT API RECEIVED NETFLOW DATA (STREAMING) ===")
+            print(f"Nodes: {len(request.data.get('nodes', []))}")
+            print(f"Edges: {len(request.data.get('edges', []))}")
+            if request.data.get('edges'):
+                sample_edge = request.data['edges'][0]
+                print(f"Sample Edge: {sample_edge}")
+            print("====================================================")
+
+            # Create a streaming callback workflow
+            async for agent_update in workflow.run_streaming(
+                input_data=request.data,
+                context=request.context
+            ):
+                # Send agent update as SSE
+                yield f"data: {json.dumps(agent_update)}\n\n"
+                await asyncio.sleep(0.01)  # Small delay to ensure delivery
+
+        except Exception as e:
+            import traceback
+            error_traceback = traceback.format_exc()
+            print(f"❌ AGENT WORKFLOW STREAMING ERROR: {str(e)}")
+            print(f"❌ TRACEBACK:\n{error_traceback}")
+
+            error_data = {
+                "type": "error",
+                "error": str(e),
+                "final_decision": {
+                    "decision": "Error",
+                    "confidence": 0,
+                    "reasoning": f"Agent system encountered an error: {str(e)}"
+                }
+            }
+            yield f"data: {json.dumps(error_data)}\n\n"
+
+    return StreamingResponse(
+        generate_agent_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+@router.post("/process")
 async def process_with_agents(request: AgentRequest):
     """
-    Process data through the AI agent system
-    
-    This endpoint runs data through all agents:
+    Process data through the AI agent system with detailed agent interactions
+
+    This endpoint runs data through all agents and returns detailed reasoning:
     1. Orchestrator - Routes and coordinates
     2. Detector - Identifies potential threats
     3. Investigator - Deep analysis
@@ -51,21 +109,32 @@ async def process_with_agents(request: AgentRequest):
             sample_edge = request.data['edges'][0]
             print(f"Sample Edge: {sample_edge}")
         print("=====================================")
-        
+
         # Run the agent workflow
         result: AgentState = await workflow.run(
             input_data=request.data,
             context=request.context
         )
-        
+
+        # Generate agent interactions summary with transparency
+        interactions_summary = workflow.get_agent_interactions_summary(result)
+
+        # Debug: Log the workflow result and interactions
+        print(f"✅ WORKFLOW COMPLETED")
+        print(f"   Completed agents: {result.get('completed_agents', [])}")
+        print(f"   Current step: {result.get('current_step')}")
+        print(f"   Total interactions: {interactions_summary.get('total_interactions', 0)}")
+
         # Extract final results
         final_decision = result.get("final_decision")
         if not final_decision:
+            print(f"❌ NO FINAL DECISION FOUND IN WORKFLOW RESULT")
+            print(f"   Available keys: {list(result.keys())}")
             raise HTTPException(status_code=500, detail="No final decision reached")
-        
-        return AgentResponse(
-            success=True,
-            result={
+
+        return {
+            "success": True,
+            "result": {
                 "decision": final_decision.decision,
                 "reasoning": final_decision.reasoning,
                 "metadata": final_decision.metadata,
@@ -74,18 +143,35 @@ async def process_with_agents(request: AgentRequest):
                     "completed_agents": result.get("completed_agents", [])
                 }
             },
-            explanation=final_decision.reasoning,
-            confidence=final_decision.confidence
-        )
-        
+            "explanation": final_decision.reasoning,
+            "confidence": final_decision.confidence,
+            # NEW: Detailed agent interactions for transparency
+            "agent_interactions": interactions_summary
+        }
+
     except Exception as e:
-        return AgentResponse(
-            success=False,
-            result={},
-            explanation="",
-            confidence=0.0,
-            error=str(e)
-        )
+        import traceback
+        error_traceback = traceback.format_exc()
+        print(f"❌ AGENT WORKFLOW ERROR: {str(e)}")
+        print(f"❌ TRACEBACK:\n{error_traceback}")
+        return {
+            "success": False,
+            "result": {},
+            "explanation": f"Agent workflow error: {str(e)}",
+            "confidence": 0.0,
+            "error": str(e),
+            "agent_interactions": {
+                "total_interactions": 0,
+                "workflow_status": "error",
+                "completed_agents": [],
+                "interactions": [],
+                "final_decision": {
+                    "decision": "Error",
+                    "confidence": 0,
+                    "reasoning": f"Agent system encountered an error: {str(e)}"
+                }
+            }
+        }
 
 
 @router.post("/process-with-interactions")
