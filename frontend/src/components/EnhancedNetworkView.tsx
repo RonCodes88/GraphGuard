@@ -75,6 +75,13 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
     attacker_count: number;
   } | null>(null);
 
+  // Streaming state
+  const [streamingEnabled, setStreamingEnabled] = useState(true);
+  const [currentBatch, setCurrentBatch] = useState(0);
+  const [streamProgress, setStreamProgress] = useState(0);
+  const [nodeTooltipPosition, setNodeTooltipPosition] = useState({ x: 0, y: 0 });
+  const [previousNodeIds, setPreviousNodeIds] = useState<Set<string>>(new Set());
+
   // Fetch network data
   const fetchNetworkData = async () => {
     try {
@@ -83,10 +90,34 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
       let data: NetworkTrafficData;
 
       if (incidentId) {
-        // Fetch incident details from backend
-        const response = await fetch(`http://localhost:8000/api/network/incident/${incidentId}`);
+        // Fetch incident details from backend with streaming support
+        const url = streamingEnabled && currentBatch >= 0
+          ? `http://localhost:8000/api/network/incident/${incidentId}?stream_batch=${currentBatch}`
+          : `http://localhost:8000/api/network/incident/${incidentId}`;
+
+        console.log(`Fetching incident from: ${url}`);
+        const response = await fetch(url);
+
+        if (!response.ok) {
+          console.error(`HTTP error! status: ${response.status}`);
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
         const incidentData = await response.json();
+        console.log('Received incident data:', incidentData);
+
+        if (!incidentData || !incidentData.incident) {
+          console.error("Invalid incident data received:", incidentData);
+          throw new Error("No incident data returned from API");
+        }
+
         const incident = incidentData.incident;
+
+        // Update streaming progress if available
+        if (incident && incident.batch_info) {
+          setStreamProgress(incident.batch_info.progress_percent);
+          console.log(`Streaming: Batch ${incident.batch_info.batch_number + 1}/${incident.batch_info.total_batches} (${incident.batch_info.progress_percent}%) - Nodes: ${incident.batch_info.nodes_loaded}/${incident.batch_info.total_nodes}`);
+        }
 
         // Transform incident data to NetworkTrafficData format
         data = {
@@ -161,12 +192,20 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
       // Update stats
       const totalPackets = sanitizedEdges.reduce((sum, e) => sum + e.packet_count, 0);
       const attackCount = sanitizedData.attack_count || 0;
-      
+      const suspiciousCount = sanitizedData.suspicious_count || 0;
+      const blockedCount = sanitizedNodes.filter(n => n.status === 'blocked').length;
+
+      // Calculate packets per second (estimate based on average latency)
+      const avgLatency = sanitizedEdges.length > 0
+        ? sanitizedEdges.reduce((sum, e) => sum + (e.latency || 0), 0) / sanitizedEdges.length
+        : 1;
+      const packetsPerSec = avgLatency > 0 ? Math.floor(totalPackets / (avgLatency / 1000)) : totalPackets;
+
       setStats({
         totalPackets: totalPackets,
-        packetsPerSecond: Math.floor(Math.random() * 5000) + 1000,
+        packetsPerSecond: packetsPerSec,
         activeAttacks: attackCount,
-        blockedThreats: Math.floor(Math.random() * 10),
+        blockedThreats: blockedCount + suspiciousCount,
         threatLevel: attackCount > 3 ? "High" : attackCount > 1 ? "Medium" : "Low",
       });
     } catch (error) {
@@ -542,11 +581,29 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
     const container = containerRef.current;
     const { width, height } = container.getBoundingClientRect();
 
-    // Clear previous visualization
-    svg.selectAll("*").remove();
+    // Identify new nodes for this batch
+    const currentNodeIds = new Set(networkData.nodes.map(n => n.id));
+    const newNodeIds = new Set(
+      [...currentNodeIds].filter(id => !previousNodeIds.has(id))
+    );
 
-    // Create main group
-    const g = svg.append("g");
+    console.log(`Batch update: ${newNodeIds.size} new nodes (${currentNodeIds.size} total, ${previousNodeIds.size} previous)`);
+
+    // Update previous node IDs
+    setPreviousNodeIds(currentNodeIds);
+
+    // Only clear on first batch or when switching incidents
+    const isFirstBatch = previousNodeIds.size === 0;
+    if (isFirstBatch) {
+      console.log("First batch - clearing visualization");
+      svg.selectAll("*").remove();
+    }
+
+    // Get or create main group
+    let g = svg.select<SVGGElement>("g.main-group");
+    if (g.empty()) {
+      g = svg.append("g").attr("class", "main-group");
+    }
 
     // Create zoom behavior
     const zoom = d3.zoom<SVGSVGElement, unknown>()
@@ -559,7 +616,7 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
 
     // Ensure nodes have proper structure
     const validNodes = networkData.nodes.filter(node => node && node.id);
-    const validEdges = networkData.edges.filter(edge => 
+    const validEdges = networkData.edges.filter(edge =>
       edge && edge.source_id && edge.target_id &&
       validNodes.some(n => n.id === edge.source_id) &&
       validNodes.some(n => n.id === edge.target_id)
@@ -668,12 +725,22 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
       .attr("stroke", "#ffaa00")
       .attr("stroke-width", 0.5);
 
-    // Create edges
-    const edges = g.append("g")
-      .attr("class", "edges")
-      .selectAll("line")
-      .data(edgesWithNodes)
-      .enter()
+    // Get or create edges group
+    let edgesGroup = g.select("g.edges");
+    if (edgesGroup.empty()) {
+      edgesGroup = g.append("g").attr("class", "edges");
+    }
+
+    // Update edges with data binding
+    const edgeSelection = edgesGroup
+      .selectAll<SVGLineElement, typeof edgesWithNodes[0]>("line")
+      .data(edgesWithNodes, (d) => d.id);
+
+    // Remove old edges
+    edgeSelection.exit().remove();
+
+    // Add new edges
+    const newEdges = edgeSelection.enter()
       .append("line")
       .attr("stroke", (d) => {
         switch (d.connection_type) {
@@ -683,7 +750,6 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
         }
       })
       .attr("stroke-width", (d) => Math.max(2, Math.min(8, d.packet_count / 1000)))
-      .attr("stroke-opacity", (d) => d.connection_type === "attack" ? 0.9 : 0.6)
       .attr("stroke-dasharray", (d) => d.connection_type === "attack" ? "8,4" : "none")
       .attr("marker-end", (d) => {
         const marker = (() => {
@@ -693,24 +759,53 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
             default: return "url(#arrow-normal)";
           }
         })();
-        console.log(`Edge ${d.id} (${d.connection_type}) -> marker: ${marker}`);
         return marker;
-      });
+      })
+      .attr("stroke-opacity", 0);  // Start invisible
 
-    // No animated particles - keeping it static
+    // Merge new and existing edges
+    const allEdges = newEdges.merge(edgeSelection as any);
 
-    // Create nodes
-    const nodes = g.append("g")
-      .attr("class", "nodes")
-      .selectAll("g")
-      .data(validNodes)
+    // Animate new edges fading in
+    newEdges
+      .transition()
+      .duration(500)
+      .attr("stroke-opacity", (d) => d.connection_type === "attack" ? 0.9 : 0.6);
+
+    // Get or create nodes group
+    let nodesGroup = g.select("g.nodes");
+    if (nodesGroup.empty()) {
+      nodesGroup = g.append("g").attr("class", "nodes");
+    }
+
+    // Update nodes with data binding
+    const nodeSelection = nodesGroup
+      .selectAll<SVGGElement, D3Node>("g.node")
+      .data(validNodes as D3Node[], (d) => d.id);
+
+    // Remove old nodes
+    nodeSelection.exit().remove();
+
+    // Add new nodes
+    const newNodes = nodeSelection
       .enter()
       .append("g")
       .attr("class", "node")
-      .style("cursor", "pointer");
+      .style("cursor", "pointer")
+      .style("opacity", 0)  // Start invisible
+      .on("mouseover", function(event: MouseEvent, d: D3Node) {
+        setHoveredNode(d as any);
+        setNodeTooltipPosition({ x: event.clientX, y: event.clientY });
+      })
+      .on("mousemove", function(event: MouseEvent) {
+        setNodeTooltipPosition({ x: event.clientX, y: event.clientY });
+      })
+      .on("mouseout", function() {
+        setHoveredNode(null);
+      });
 
-    // Add node circles with different shapes based on type
-    nodes.each(function(d: D3Node) {
+    // Add node circles with different shapes based on type (only for new nodes)
+    newNodes.each(function(d: D3Node) {
       const nodeGroup = d3.select(this);
       
       // Main node circle
@@ -761,22 +856,32 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
         .text((d: any) => d.ip.split('.').slice(-1)[0]); // Show last octet of IP
     });
 
+    // Fade in new nodes
+    newNodes
+      .transition()
+      .duration(500)
+      .style("opacity", 1);
+
+    // Merge new and existing nodes for positioning and interaction
+    const nodes = newNodes.merge(nodeSelection as any);
+    const edges = allEdges;
+
     // Add hover effects
     nodes
       .on("mouseover", function(event, d: D3Node) {
         setHoveredNode(d);
-        
+
         // Highlight connected edges
         edges
-          .attr("stroke-opacity", (edge) => 
+          .attr("stroke-opacity", (edge) =>
             edge.source_id === d.id || edge.target_id === d.id ? 1 : 0.3
           );
-        
+
         // Highlight connected nodes
         nodes
-          .attr("opacity", (node: D3Node) => 
-            node.id === d.id || 
-            edgesWithNodes.some(edge => 
+          .attr("opacity", (node: D3Node) =>
+            node.id === d.id ||
+            edgesWithNodes.some(edge =>
               (edge.source_id === d.id && edge.target_id === node.id) ||
               (edge.target_id === d.id && edge.source_id === node.id)
             ) ? 1 : 0.3
@@ -784,7 +889,7 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
       })
       .on("mouseout", function() {
         setHoveredNode(null);
-        
+
         // Reset all elements
         edges.attr("stroke-opacity", (d: any) => d.connection_type === "attack" ? 0.9 : 0.6);
         nodes.attr("opacity", 1);
@@ -892,10 +997,51 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
     };
   }, [networkData, useStaticLayout]);
 
-  // Fetch data on mount only (no real-time updates)
+  // Reset state when switching incidents/countries
+  useEffect(() => {
+    setPreviousNodeIds(new Set());
+    setCurrentBatch(0);
+    setStreamProgress(0);
+    setStreamingEnabled(true); // Re-enable streaming for new incident
+  }, [incidentId, country]);
+
+  // Fetch data on mount and when batch changes
   useEffect(() => {
     fetchNetworkData();
-  }, [incidentId, country]);
+  }, [incidentId, country, currentBatch]);
+
+  // Streaming: Poll for new batches and fetch updated data
+  useEffect(() => {
+    if (!incidentId || !streamingEnabled) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`http://localhost:8000/api/network/incident/${incidentId}/stream`);
+        const streamStatus = await response.json();
+
+        // Check if complete first to avoid unnecessary updates
+        if (streamStatus.is_complete) {
+          setStreamingEnabled(false);
+          setStreamProgress(100);
+          console.log("Streaming complete - stopping polling");
+          return;
+        }
+
+        // Always update progress from stream status
+        setStreamProgress(streamStatus.progress_percent || 0);
+
+        if (streamStatus.current_batch > currentBatch) {
+          console.log(`New batch available: ${streamStatus.current_batch}`);
+          setCurrentBatch(streamStatus.current_batch);
+          // fetchNetworkData will be triggered by currentBatch change in useEffect
+        }
+      } catch (error) {
+        console.error("Streaming poll error:", error);
+      }
+    }, 3000); // Poll every 3 seconds to match batch interval
+
+    return () => clearInterval(pollInterval);
+  }, [incidentId, streamingEnabled, currentBatch]);
 
   return (
     <div className="relative w-full h-screen bg-black">
@@ -1162,6 +1308,66 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Node Hover Tooltip */}
+      {hoveredNode && (
+        <div
+          className="absolute z-[100] pointer-events-none bg-black/95 backdrop-blur-md rounded-lg p-4 border border-cyan-500/50 min-w-[280px] max-w-[350px]"
+          style={{
+            left: nodeTooltipPosition.x + 15,
+            top: nodeTooltipPosition.y + 15,
+          }}
+        >
+          <div className="text-cyan-400 font-bold text-base mb-2 flex items-center gap-2">
+            {hoveredNode.node_type === 'server' ? '🖥️' :
+             hoveredNode.node_type === 'client' ? '💻' :
+             hoveredNode.node_type === 'router' ? '🔀' :
+             hoveredNode.node_type === 'firewall' ? '🛡️' :
+             hoveredNode.node_type === 'database' ? '🗄️' : '💻'}
+            {hoveredNode.node_type.toUpperCase()}
+          </div>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between items-center">
+              <span className="text-gray-400">IP Address:</span>
+              <span className="text-white font-mono text-xs">{hoveredNode.ip}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-400">Status:</span>
+              <span className={`font-bold uppercase text-xs ${
+                hoveredNode.status === 'attacked' ? 'text-red-500' :
+                hoveredNode.status === 'suspicious' ? 'text-yellow-500' :
+                hoveredNode.status === 'blocked' ? 'text-gray-500' :
+                'text-green-500'
+              }`}>
+                {hoveredNode.status}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-400">Traffic Volume:</span>
+              <span className="text-white font-mono text-xs">{hoveredNode.traffic_volume.toLocaleString()} pkts</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-400">Location:</span>
+              <span className="text-white text-xs">{hoveredNode.city}, {hoveredNode.country}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-400">Coordinates:</span>
+              <span className="text-gray-300 font-mono text-xs">
+                {hoveredNode.latitude.toFixed(2)}, {hoveredNode.longitude.toFixed(2)}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-400">Last Seen:</span>
+              <span className="text-gray-300 text-xs">
+                {new Date(hoveredNode.last_seen).toLocaleTimeString()}
+              </span>
+            </div>
+          </div>
+          <div className="mt-2 pt-2 border-t border-gray-700 text-xs text-gray-500 text-center">
+            Click node for detailed analysis
+          </div>
         </div>
       )}
 
