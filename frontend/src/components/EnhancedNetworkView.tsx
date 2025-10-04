@@ -999,10 +999,26 @@ export default function EnhancedNetworkView({ incidentId, country, onBack }: Enh
 
   // Reset state when switching incidents/countries
   useEffect(() => {
-    setPreviousNodeIds(new Set());
-    setCurrentBatch(0);
-    setStreamProgress(0);
-    setStreamingEnabled(true); // Re-enable streaming for new incident
+    const resetIncident = async () => {
+      setPreviousNodeIds(new Set());
+      setCurrentBatch(0);
+      setStreamProgress(0);
+      setStreamingEnabled(true); // Re-enable streaming for new incident
+
+      // Reset backend streaming state for this incident
+      if (incidentId) {
+        try {
+          await fetch(`http://localhost:8000/api/network/incident/stream/reset?incident_id=${incidentId}`, {
+            method: 'POST'
+          });
+          console.log(`Reset streaming state for incident: ${incidentId}`);
+        } catch (error) {
+          console.error("Failed to reset streaming state:", error);
+        }
+      }
+    };
+
+    resetIncident();
   }, [incidentId, country]);
 
   // Fetch data on mount and when batch changes
