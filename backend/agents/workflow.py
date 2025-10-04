@@ -396,6 +396,15 @@ class AgentWorkflow:
         context = state.get("context", {})
         orchestrator_analysis = context.get("orchestrator_analysis", {})
         
+        # Debug: Log NetFlow data received by Detector
+        print("=== DETECTOR AGENT RECEIVED NETFLOW DATA ===")
+        print(f"Nodes: {len(input_data.get('nodes', []))}")
+        print(f"Edges: {len(input_data.get('edges', []))}")
+        if input_data.get('edges'):
+            sample_edge = input_data['edges'][0]
+            print(f"Sample Edge: {sample_edge}")
+        print("=============================================")
+        
         # Initialize fast model for detection
         llm = ChatOpenAI(
             model=config.fast_model,
@@ -405,19 +414,26 @@ class AgentWorkflow:
         
         # Create detection prompt
         prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an AI-powered network threat detector specialized in identifying suspicious activity and anomalies in network traffic.
+            ("system", """You are an AI-powered network threat detector specialized in analyzing NetFlow data to identify suspicious activity and anomalies.
 
 Your role:
-- Analyze network traffic patterns to identify threats
-- Apply heavy-hitter detection (identify nodes/edges with abnormally high traffic)
-- Detect graph anomalies (unusual connection patterns, clustering, isolated nodes)
-- Flag abnormal IPs, ports, and traffic volumes
-- Generate confidence scores for each detected threat
+- Analyze NetFlow records (packet counts, protocols, IPs, ports, bandwidth) to identify threats
+- Apply heavy-hitter detection using NetFlow metrics (identify nodes/edges with abnormally high packet volumes)
+- Detect graph anomalies using NetFlow patterns (unusual connection patterns, clustering, isolated nodes)
+- Flag abnormal IPs, ports, and traffic volumes based on NetFlow data
+- Generate confidence scores for each detected threat using NetFlow evidence
 
 You will receive:
-1. Orchestrator analysis (initial threat assessment)
-2. Network nodes (IPs with statuses and traffic volumes)
-3. Network edges (connections between nodes with types and attack classifications)
+1. Orchestrator analysis (initial threat assessment based on NetFlow data)
+2. Network nodes (IPs with statuses and traffic volumes from NetFlow)
+3. Network edges (NetFlow records with packet_count, protocol, source_ip, target_ip, bandwidth, attack_type)
+
+CRITICAL: Always reference specific NetFlow metrics in your analysis:
+- Extract exact packet counts (d_pkts) from edges
+- Identify protocol numbers (6=TCP, 17=UDP, 1=ICMP)
+- Analyze source/target IP addresses and ports
+- Calculate bandwidth consumption (d_octets)
+- Compare against normal baselines
 
 You must generate a JSON response with:
 {{
@@ -433,8 +449,19 @@ You must generate a JSON response with:
         "ips": ["ip1", "ip2"],
         "ports": [80, 443]
       }},
-      "reasoning": "Detailed explanation",
-      "indicators": ["indicator1", "indicator2"]
+      "reasoning": "Detailed NetFlow-based explanation with specific metrics",
+      "netflow_indicators": [
+        "UDP protocol (17) with 15,000+ packets indicating DDoS",
+        "Packet volume exceeds baseline by 500%",
+        "Bandwidth consumption of 1.5MB/s",
+        "Source IP 172.16.0.5 targeting port 53"
+      ],
+      "quantitative_analysis": {
+        "packet_count": "exact packet count from NetFlow",
+        "protocol": "exact protocol number",
+        "bandwidth": "exact bytes transferred",
+        "baseline_comparison": "percentage above normal"
+      }
     }}
   ],
   "heavy_hitters": [
@@ -472,26 +499,59 @@ You must generate a JSON response with:
   "summary": "Plain-English summary of findings"
 }}
 
-Analysis guidelines:
-- Consider traffic volume relative to network average
-- Identify nodes with disproportionately high in/out connections
-- Detect clustering patterns indicative of botnets
-- Flag IPs marked as "attacked" or "suspicious" in input
-- Look for port scanning patterns (many connections from one source to different targets)
-- Calculate confidence based on evidence strength
-- Provide actionable reasoning for security teams"""),
-            ("human", """Analyze this network traffic and detect threats:
+Analysis guidelines - BE SPECIFIC WITH NETFLOW DATA:
+- Extract exact packet counts, protocols, IPs, and ports from NetFlow records
+- Calculate attack intensity ratios (packet volume vs baseline)
+- Identify specific attack patterns using NetFlow metrics
+- Reference exact NetFlow data points in reasoning
+- Calculate bandwidth consumption rates
+- Match attack patterns to CIC dataset attack types
+- Provide quantitative analysis with specific numbers
+- Use NetFlow terminology (d_pkts, d_octets, srcaddr, dstaddr, prot)
+- Calculate confidence based on NetFlow evidence strength
+- Provide actionable reasoning with specific NetFlow metrics"""),
+            ("human", """Analyze NetFlow data and detect threats with SPECIFIC METRICS:
 
-ORCHESTRATOR ANALYSIS:
+ORCHESTRATOR ANALYSIS (NetFlow-based):
 {orchestrator_analysis}
 
-NETWORK NODES:
+NETWORK NODES (NetFlow Sources/Destinations):
 {nodes}
 
-NETWORK EDGES:
+NETWORK EDGES (NetFlow Records):
 {edges}
 
-Perform threat detection analysis and return a comprehensive JSON report.""")
+CRITICAL REQUIREMENTS - PROVIDE SPECIFIC NETFLOW ANALYSIS:
+
+MANDATORY: You MUST extract and reference EXACT NetFlow metrics from the provided data. Do NOT use generic language.
+
+1. EXTRACT EXACT METRICS from each edge:
+   - packet_count: Exact number of packets (d_pkts) - USE THE ACTUAL NUMBER
+   - protocol: Exact protocol number (6=TCP, 17=UDP, 1=ICMP) - USE THE ACTUAL NUMBER
+   - source_ip: Exact source IP address - USE THE ACTUAL IP
+   - target_ip: Exact destination IP address - USE THE ACTUAL IP
+   - bandwidth: Exact bytes transferred (d_octets) - USE THE ACTUAL NUMBER
+   - attack_type: Specific attack type from CIC dataset - USE THE ACTUAL TYPE
+
+2. CALCULATE ATTACK INTENSITY WITH EXACT NUMBERS:
+   - Compare packet counts to normal baselines (typically 100-1000 packets)
+   - Calculate bandwidth consumption rates (MB/s = bytes/1000000)
+   - Determine packet-per-second rates
+   - Calculate exact percentages above baseline
+
+3. PROVIDE QUANTITATIVE ANALYSIS WITH EXACT NUMBERS:
+   - "UDP protocol (17) with {{EXACT PACKET COUNT}} packets from {{EXACT SOURCE IP}} targeting port {{EXACT PORT}}"
+   - "Packet volume exceeds baseline by {{EXACT PERCENTAGE}}% ({{EXACT COUNT}} vs 1000 normal)"
+   - "Bandwidth consumption of {{EXACT MB/s}}MB/s indicates high-volume attack"
+   - "Attack pattern matches CIC {{EXACT ATTACK TYPE}} signature"
+
+4. MAKE EACH ANALYSIS UNIQUE FOR THE SPECIFIC NODE:
+   - Reference the specific node ID being analyzed
+   - Include unique NetFlow metrics for that specific node
+   - Provide node-specific reasoning based on its exact traffic patterns
+   - Do NOT use generic phrases like "high traffic volume" or "suspicious patterns"
+
+Detect threats with SPECIFIC NetFlow data points and quantitative analysis.""")
         ])
         
         # Invoke LLM
@@ -595,6 +655,15 @@ Perform threat detection analysis and return a comprehensive JSON report.""")
         context = state.get("context", {})
         orchestrator_analysis = context.get("orchestrator_analysis", {})
         
+        # Debug: Log NetFlow data received by Investigator
+        print("=== INVESTIGATOR AGENT RECEIVED NETFLOW DATA ===")
+        print(f"Nodes: {len(input_data.get('nodes', []))}")
+        print(f"Edges: {len(input_data.get('edges', []))}")
+        if input_data.get('edges'):
+            sample_edge = input_data['edges'][0]
+            print(f"Sample Edge: {sample_edge}")
+        print("================================================")
+        
         # Get Detector's findings
         detector_decision = state.get("detector_decision")
         detector_metadata = detector_decision.metadata if detector_decision else {}
@@ -608,21 +677,29 @@ Perform threat detection analysis and return a comprehensive JSON report.""")
         
         # Create investigation prompt
         prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an elite AI-powered network security investigator specialized in deep forensic analysis of cyber threats.
+            ("system", """You are an elite AI-powered network security investigator specialized in deep forensic analysis of cyber threats using NetFlow data.
 
 Your role:
 - Perform comprehensive forensic analysis on threats detected by the Detector agent
-- Inspect suspicious nodes and edges in detail
-- Determine precise attack types and methodologies
-- Correlate multiple threat indicators into attack campaigns
-- Provide detailed technical reports for security teams
-- Assess attack sophistication and likely threat actor profiles
+- Analyze NetFlow records (packet counts, protocols, IP addresses, ports, timestamps)
+- Inspect suspicious nodes and edges in detail using NetFlow flow data
+- Determine precise attack types and methodologies based on NetFlow patterns
+- Correlate multiple threat indicators into attack campaigns using flow analysis
+- Provide detailed technical reports for security teams with NetFlow evidence
+- Assess attack sophistication and likely threat actor profiles using traffic patterns
 
 You will receive:
-1. Orchestrator's initial threat assessment
-2. Detector's threat findings (threats, heavy hitters, anomalies, flagged IPs)
-3. Full network node and edge data
+1. Orchestrator's initial threat assessment based on NetFlow data
+2. Detector's threat findings (threats, heavy hitters, anomalies, flagged IPs) from NetFlow analysis
+3. Full network node and edge data (NetFlow records with packet_count, protocol, source_ip, target_ip, etc.)
 4. Context from previous agent decisions
+
+CRITICAL: Always reference specific NetFlow data points in your analysis:
+- Packet counts (d_pkts) indicating attack volume
+- Protocol numbers (TCP=6, UDP=17, ICMP=1) showing attack vectors
+- Source/target IP addresses and ports showing attack patterns
+- Bandwidth/octet counts showing data transfer volumes
+- Timestamps showing attack duration and timing patterns
 
 You must generate a JSON response with:
 {{
@@ -648,7 +725,14 @@ You must generate a JSON response with:
         }}
       ],
       "technical_details": {{
-        "attack_vector": "Description of how the attack works",
+        "attack_vector": "Description of how the attack works based on NetFlow analysis",
+        "netflow_evidence": {{
+          "packet_counts": "Analysis of packet volumes (d_pkts) indicating attack intensity",
+          "protocol_analysis": "Protocol usage patterns (TCP/UDP/ICMP) showing attack vectors",
+          "ip_port_patterns": "Source/target IP and port patterns revealing attack methodology",
+          "bandwidth_analysis": "Data transfer volumes (d_octets) showing attack scale",
+          "timing_patterns": "Flow timing analysis showing attack duration and intervals"
+        }},
         "indicators_of_compromise": ["ioc1", "ioc2"],
         "ttps": ["MITRE ATT&CK technique IDs or descriptions"],
         "payload_analysis": "If applicable"
@@ -666,8 +750,9 @@ You must generate a JSON response with:
       }},
       "evidence_chain": [
         {{
-          "evidence_type": "traffic_pattern" | "node_behavior" | "connection_anomaly" | "payload_signature",
-          "description": "Detailed evidence",
+          "evidence_type": "netflow_traffic_pattern" | "netflow_node_behavior" | "netflow_connection_anomaly" | "netflow_protocol_anomaly" | "netflow_volume_anomaly",
+          "description": "Detailed NetFlow-based evidence with specific data points",
+          "netflow_data_points": ["specific packet counts", "protocol numbers", "IP addresses", "port numbers", "timestamps"],
           "confidence": 0.0-1.0
         }}
       ],
@@ -721,15 +806,19 @@ You must generate a JSON response with:
 }}
 
 Investigation guidelines:
-- Cross-reference Detector findings with network data for validation
-- Look for attack patterns and MITRE ATT&CK techniques
-- Identify attack stages (kill chain analysis)
-- Correlate multiple indicators into campaigns
-- Provide evidence-based conclusions
-- Consider false positive possibilities
-- Recommend specific, actionable next steps
-- Use industry-standard terminology (MITRE, NIST, etc.)"""),
-            ("human", """Perform deep forensic investigation on the detected threats:
+- ALWAYS reference specific NetFlow data points in your analysis
+- Extract exact packet counts, protocol numbers, IP addresses, and ports from the edges data
+- Calculate attack intensity ratios (e.g., "packet volume exceeds baseline by 500%")
+- Identify specific attack signatures from NetFlow patterns
+- Provide quantitative analysis (bandwidth consumption, packet rates, etc.)
+- Cross-reference with CIC DDoS 2019 dataset attack types
+- Use specific NetFlow terminology (d_pkts, d_octets, srcaddr, dstaddr, prot)
+- Calculate attack severity based on NetFlow metrics
+- Provide evidence-based conclusions with exact data points
+- Consider false positive possibilities using NetFlow validation
+- Recommend specific, actionable next steps based on NetFlow analysis
+- Use industry-standard terminology (MITRE, NIST, NetFlow RFC)"""),
+            ("human", """Perform deep forensic investigation on the detected threats using NetFlow data analysis:
 
 ORCHESTRATOR ANALYSIS:
 {orchestrator_analysis}
@@ -737,13 +826,54 @@ ORCHESTRATOR ANALYSIS:
 DETECTOR FINDINGS:
 {detector_findings}
 
-NETWORK NODES:
+NETWORK NODES (NetFlow Sources/Destinations):
 {nodes}
 
-NETWORK EDGES:
+NETWORK EDGES (NetFlow Records):
 {edges}
 
-Conduct comprehensive investigation and return a detailed JSON forensic report.""")
+CRITICAL ANALYSIS REQUIREMENTS - BE SPECIFIC WITH NETFLOW DATA:
+
+MANDATORY: You MUST extract and reference EXACT NetFlow metrics from the provided data. Do NOT use generic language.
+
+1. EXTRACT EXACT NETFLOW METRICS from each edge:
+   - packet_count: Exact number of packets (d_pkts) - USE THE ACTUAL NUMBER
+   - protocol: Exact protocol number (6=TCP, 17=UDP, 1=ICMP) - USE THE ACTUAL NUMBER
+   - source_ip: Exact source IP address - USE THE ACTUAL IP
+   - target_ip: Exact destination IP address - USE THE ACTUAL IP
+   - bandwidth: Exact bytes transferred (d_octets) - USE THE ACTUAL NUMBER
+   - attack_type: Specific attack type from CIC dataset - USE THE ACTUAL TYPE
+
+2. CALCULATE ATTACK INTENSITY RATIOS:
+   - Compare packet counts to normal baselines (typically 100-1000 packets)
+   - Calculate bandwidth consumption rates (MB/s = bytes/1000000)
+   - Determine packet-per-second rates
+   - Assess attack duration from timestamps
+
+3. PROVIDE QUANTITATIVE ANALYSIS WITH EXACT NUMBERS:
+   - "UDP protocol (17) with {{EXACT PACKET COUNT}} packets from {{EXACT SOURCE IP}} targeting port {{EXACT PORT}}"
+   - "Packet volume exceeds baseline by {{EXACT PERCENTAGE}}% ({{EXACT COUNT}} vs 1000 normal)"
+   - "Bandwidth consumption of {{EXACT MB/s}}MB/s indicates high-volume attack"
+   - "Attack pattern matches CIC {{EXACT ATTACK TYPE}} signature with {{EXACT CONFIDENCE}}% confidence"
+
+4. REFERENCE SPECIFIC CIC DATASET ATTACK TYPES:
+   - DrDoS_DNS, SYN-Flood, UDP-Flood, Port-Scan, etc.
+   - Match NetFlow patterns to known attack signatures
+   - Provide confidence scores based on pattern matching
+
+5. EXPLAIN SEVERITY USING EXACT NETFLOW METRICS:
+   - Critical: >10,000 packets, >1MB/s bandwidth, coordinated IPs
+   - High: 5,000-10,000 packets, 500KB-1MB/s bandwidth
+   - Medium: 1,000-5,000 packets, 100-500KB/s bandwidth
+   - Low: <1,000 packets, <100KB/s bandwidth
+
+6. MAKE EACH ANALYSIS UNIQUE:
+   - Reference the specific node ID being analyzed
+   - Include unique NetFlow metrics for that specific node
+   - Provide node-specific reasoning based on its exact traffic patterns
+   - Do NOT use generic phrases like "high traffic volume" or "suspicious patterns"
+
+Conduct comprehensive NetFlow-based investigation and return a detailed JSON forensic report.""")
         ])
         
         # Invoke LLM
@@ -1046,20 +1176,27 @@ Generate a comprehensive JSON monitoring report.""")
         
         # Create judge prompt
         prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an AI-powered security judge responsible for making final decisions in cybersecurity incidents.
+            ("system", """You are an AI-powered security judge responsible for making final decisions in cybersecurity incidents based on NetFlow data analysis.
 
 Your role:
-- Aggregate findings from Detector, Investigator, and Monitor agents
-- Resolve conflicts between agent recommendations
-- Make final decisions on threat severity and required actions
-- Provide clear reasoning for security teams
-- Determine if automated mitigation should be applied
+- Aggregate findings from Detector, Investigator, and Monitor agents based on NetFlow evidence
+- Resolve conflicts between agent recommendations using NetFlow data validation
+- Make final decisions on threat severity and required actions based on NetFlow metrics
+- Provide clear reasoning for security teams referencing specific NetFlow data points
+- Determine if automated mitigation should be applied based on NetFlow attack patterns
 
 You will receive:
-1. Orchestrator's initial threat assessment
-2. Detector's threat findings and flagged entities
-3. Investigator's forensic analysis and attack details
-4. Monitor's health assessment and trends
+1. Orchestrator's initial threat assessment based on NetFlow data
+2. Detector's threat findings and flagged entities from NetFlow analysis
+3. Investigator's forensic analysis and attack details using NetFlow records
+4. Monitor's health assessment and trends from NetFlow monitoring
+
+CRITICAL: Always base your decisions on NetFlow evidence:
+- Packet counts (d_pkts) indicating attack volume and severity
+- Protocol analysis (TCP/UDP/ICMP) showing attack vectors
+- IP address patterns revealing attack sources and targets
+- Port analysis showing attack methodologies
+- Bandwidth/octet counts showing attack scale and impact
 
 You must generate a JSON response with:
 {{
@@ -1095,37 +1232,81 @@ You must generate a JSON response with:
     "service_disruption_risk": 0-100,
     "reputation_risk": 0-100
   }},
-  "reasoning": "Plain-English explanation of the decision process",
-  "next_steps": "What should happen next"
+  "reasoning": "Plain-English explanation of the decision process based on NetFlow evidence analysis",
+  "netflow_evidence_summary": {{
+    "packet_volume_analysis": "Analysis of packet counts supporting the decision",
+    "protocol_pattern_analysis": "Protocol usage patterns indicating attack type",
+    "ip_traffic_analysis": "IP address patterns showing attack sources/targets",
+    "severity_justification": "How NetFlow metrics justify the threat severity level"
+  }},
+  "next_steps": "What should happen next based on NetFlow analysis"
 }}
 
-Decision guidelines:
-- Consider the confidence levels from all agents
-- Prioritize high-confidence findings over low-confidence ones
-- Look for consensus between Detector and Investigator
-- Consider Monitor's health trends and patterns
-- Err on the side of caution for critical threats
-- Provide actionable recommendations
-- Explain reasoning clearly for human review"""),
-            ("human", """Make final security decisions based on agent findings:
+Decision guidelines - BE SPECIFIC WITH NETFLOW EVIDENCE:
+- ALWAYS reference exact NetFlow metrics in your reasoning
+- Extract specific packet counts, protocols, IPs, and ports from the data
+- Calculate attack intensity ratios and bandwidth consumption
+- Match attack patterns to specific CIC dataset attack types
+- Provide quantitative severity justification using NetFlow metrics
+- Consider confidence levels from all agents based on NetFlow analysis
+- Prioritize high-confidence NetFlow findings over low-confidence ones
+- Look for consensus between Detector and Investigator on NetFlow patterns
+- Consider Monitor's health trends and NetFlow patterns
+- Err on the side of caution for critical NetFlow-based threats
+- Provide actionable recommendations based on NetFlow evidence
+- Explain reasoning with specific NetFlow data points for human review
+- Use exact NetFlow terminology (d_pkts, d_octets, srcaddr, dstaddr, prot)"""),
+            ("human", """Make final security decisions based on NetFlow data analysis and agent findings:
 
-ORCHESTRATOR ANALYSIS:
+ORCHESTRATOR ANALYSIS (NetFlow-based):
 {orchestrator_analysis}
 
-DETECTOR FINDINGS:
+DETECTOR FINDINGS (NetFlow analysis):
 {detector_findings}
 
-INVESTIGATOR FINDINGS:
+INVESTIGATOR FINDINGS (NetFlow forensics):
 {investigator_findings}
 
-MONITOR FINDINGS:
+MONITOR FINDINGS (NetFlow monitoring):
 {monitor_findings}
 
-NETWORK DATA:
-{nodes}
-{edges}
+NETFLOW DATA (Raw network flows):
+Nodes: {nodes}
+Edges: {edges}
 
-Provide final judgment and recommendations.""")
+CRITICAL REQUIREMENTS - PROVIDE SPECIFIC NETFLOW ANALYSIS:
+
+MANDATORY: You MUST extract and reference EXACT NetFlow metrics from the provided data. Do NOT use generic language.
+
+1. EXTRACT AND REFERENCE EXACT NETFLOW METRICS:
+   - "UDP protocol (17) with {{EXACT PACKET COUNT}} packets from source IP {{EXACT SOURCE IP}} targeting port {{EXACT PORT}}"
+   - "Packet volume exceeds baseline by {{EXACT PERCENTAGE}}% ({{EXACT COUNT}} vs 1000 normal packets)"
+   - "Bandwidth consumption of {{EXACT MB/s}}MB/s indicates high-volume attack"
+   - "Attack pattern matches CIC {{EXACT ATTACK TYPE}} signature with {{EXACT CONFIDENCE}}% confidence"
+
+2. CALCULATE AND EXPLAIN SEVERITY METRICS:
+   - Critical: >10,000 packets, >1MB/s bandwidth, coordinated attack IPs
+   - High: 5,000-10,000 packets, 500KB-1MB/s bandwidth
+   - Medium: 1,000-5,000 packets, 100-500KB/s bandwidth
+   - Low: <1,000 packets, <100KB/s bandwidth
+
+3. PROVIDE QUANTITATIVE REASONING WITH EXACT NUMBERS:
+   - "NetFlow analysis reveals {{EXACT PROTOCOL}} with {{EXACT PACKET COUNT}} packets from {{EXACT SOURCE IP}} targeting {{EXACT PORT}}"
+   - "Packet volume exceeds normal baseline by {{EXACT PERCENTAGE}}%"
+   - "Bandwidth consumption of {{EXACT MB/s}}MB/s indicates {{EXACT ATTACK TYPE}}"
+   - "Investigator confirmed this pattern matches known {{EXACT CIC ATTACK TYPE}} signatures"
+
+4. REFERENCE SPECIFIC CIC DATASET ATTACK TYPES:
+   - DrDoS_DNS, SYN-Flood, UDP-Flood, Port-Scan, etc.
+   - Match exact NetFlow patterns to known attack signatures
+
+5. MAKE EACH ANALYSIS UNIQUE FOR THE SPECIFIC NODE:
+   - Reference the specific node ID being analyzed
+   - Include unique NetFlow metrics for that specific node
+   - Provide node-specific reasoning based on its exact traffic patterns
+   - Do NOT use generic phrases like "high traffic volume" or "suspicious patterns"
+
+Provide final judgment with SPECIFIC NetFlow data points and quantitative analysis.""")
         ])
         
         # Prepare agent findings for LLM
