@@ -4,6 +4,7 @@ from agents.api import router as agents_router
 from agents.network_api import router as network_router
 from agents.network_stream import network_streamer
 from agents.cic_replayer import app as cic_replayer_app
+from api.mitigation import router as mitigation_router
 
 app = FastAPI(
     title="A10Hacks AI Agent System",
@@ -23,6 +24,7 @@ app.add_middleware(
 # Include agent API routes
 app.include_router(agents_router)
 app.include_router(network_router)
+app.include_router(mitigation_router)
 
 # Include CIC replayer routes
 app.mount("/cic", cic_replayer_app)
