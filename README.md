@@ -3,7 +3,6 @@
 ## Agentic AI Network Security Simulation & Visualization Platform
 
 ![AI Agents](https://img.shields.io/badge/AI-Agents-blue) ![Network Attack Simulation](https://img.shields.io/badge/Network-Attack%20Simulation-red)
-
 ---
 
 ## 🎯 Project Overview
@@ -11,6 +10,13 @@
 GraphGuard is an AI agent-based network traffic and threat simulation platform that detects and mitigates network attacks in real time. It employs six autonomous AI agents, integrates the CIC DDoS 2019 dataset (431k+ labeled flows), and supports NetFlow v5 for following industry standards. The system combines real-world traffic modeling with interactive 3D threat visualization.
 
 ---
+
+<img width="1496" height="897" alt="image" src="https://github.com/user-attachments/assets/97faf14d-3d7b-4fc5-a8bf-b3a95025b4b8" />
+<img width="1493" height="890" alt="image" src="https://github.com/user-attachments/assets/4e2f4442-2dab-4828-942b-45957d94bd34" />
+<img width="1495" height="893" alt="image" src="https://github.com/user-attachments/assets/621ddce1-6dbf-40ec-ba10-91d96373e011" />
+<img width="1502" height="898" alt="image" src="https://github.com/user-attachments/assets/ec8e5b64-aaee-49a9-8637-66fb6363b7b2" />
+
+
 
 ## 🚀 Key Features
 
