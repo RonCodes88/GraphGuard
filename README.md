@@ -1,4 +1,4 @@
-# 🏆 GraphGuard - A10 Networks Hackathon Winner
+# GraphGuard - A10 Networks Hackathon Winner
 
 ## Agentic AI Network Security Simulation & Visualization Platform
 
